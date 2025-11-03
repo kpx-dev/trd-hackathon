@@ -1,0 +1,32 @@
+A little planning can go a long way toward a winning project. In Hack the Track Hackathon, we want to be sure we get to check out your project and want to help you get there. Plan your route to victory!
+
+Check out our Tips for Planning Your Project and the below rough timeline for when to start different activities: Map out your success!
+
+ Brainstorm (Today)
+
+ Pick an idea (Tomorrow)
+
+ Quick design and how it might work (by the end of next week)
+
+ Start building (by the end of October)
+
+ Start your submission (First week in November)
+
+ Finish up your project (mid-November)
+
+ Record your demo video (November 21st)
+
+🏁 Finish submission (November 24th)
+
+Fine-tune your project - continue making updates if you have extra time (until the deadline - November 24th at 5pm PT) 
+
+ 
+
+The Toyota Gazoo Racing Team updated some of the datasets to improve them for you: 
+
+Some notes and known issues with the telemetry/lap time data
+Definitions of the telemetry data points along with units
+Track maps
+ 
+
+We can’t wait to see your project as you get ready to cross the finish line!

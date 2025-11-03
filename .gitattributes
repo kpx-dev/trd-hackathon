@@ -1,0 +1,2 @@
+*_telemetry_data.csv filter=lfs diff=lfs merge=lfs -text
+*telemetry*.csv filter=lfs diff=lfs merge=lfs -text

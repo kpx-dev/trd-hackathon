@@ -1,0 +1,39 @@
+Ever wondered what separates a podium finish from the rest of the pack? It's more than just speed—it's strategy, precision, and the power of data.
+
+This is your chance to work with real, high-stakes racing data from past Toyota victories. We're calling on developers, data scientists, students, strategists, and superfans to dig into the telemetry, lap times, and sensor data to build something extraordinary. Whether you're writing code or building the ultimate data-driven analysis, your insights could shape the future of racing.
+
+Join Hack the Track and show us what's possible when passion meets performance. The checkered flag is waiting 🏁
+
+
+Why Join? 🏎️💨
+ANALYZE a unique dataset from the world of professional motorsports.
+BUILD innovative tools and insights for drivers, engineers, and fans.
+WIN your share of $20,000 in cash prizes.
+
+Get Started
+
+Download the Datasets (5 minutes)
+Explore the data documentation to understand the variables at play (45 minutes)
+Brainstorm your project and choose a category to dominate (30 minutes)
+Requirements
+What to Build
+Your mission is to use the provided race Datasets to develop a project that provides novel insights or tools. Your project can be anything from a software application, to a predictive model, or an in-depth analytical report, or even an interactive dashboard or anything else you can think of.
+
+Choose one of the following categories to compete in:
+
+Driver Training & Insights: Create a tool or analysis that could help a driver identify areas for improvement, optimize their racing line, or better understand their performance.
+Pre-Event Prediction: Can you predict the future? Develop a model to forecast qualifying results, race pace, tire degradation, or other key performance indicators before the green flag drops.
+Post-Event Analysis: Go beyond the final standings. Create a dashboard or report that tells the story of the race, revealing key moments and strategic decisions that led to the outcome.
+Real-Time Analytics: Design a tool that simulates real-time decision-making for a race engineer. What's the perfect pit stop window? How can you react to a caution flag?
+Wildcard: Have a brilliant idea that doesn’t fit the categories above? Surprise us! This category is for the most creative and out-of-the-box applications of racing data.
+We’re looking to develop a real-time analytics and strategy tool for the GR Cup Series that will help enhance driver insights, team performance, and race-day decision-making.
+
+ 
+What to Submit
+
+Category selected
+Dataset(s) used
+Text Description
+Published project for judges to test
+URL to your code repository for judging and testing - if private, share with testing@devpost.com and trd.hackathon@toyota.com 
+Include a video (about 3 minutes) that demonstrates your submission
