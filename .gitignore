@@ -13,23 +13,68 @@ __pycache__/
 *$py.class
 *.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
 env/
 venv/
 .venv/
+ENV/
 pip-log.txt
 pip-delete-this-directory.txt
+
+# Testing
 .tox/
+.nox/
 .coverage
 .pytest_cache/
+htmlcov/
+coverage.xml
+.hypothesis/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
 # Jupyter Notebook
-.ipynb_checkpoints
+.ipynb_checkpoints/
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Documentation
+docs/_build/
+site/
 
 # IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# Claude Code
+.claude/
 
 # OS
 .DS_Store
