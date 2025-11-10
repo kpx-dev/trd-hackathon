@@ -1,11 +1,7 @@
-# Large data files - exclude everything in data_files except small analysis files
-dataset/data_files/*.zip
-dataset/data_files/*/R*_*_telemetry_data.csv
-dataset/data_files/*/*telemetry*.csv
-
-# Only include small analysis files that are useful for development
-!dataset/data_files/*/R*_*_lap_*.csv
-!dataset/data_files/*/*.CSV
+# Large data files - exclude entire dataset directory (data files remain local only)
+dataset/data_files/
+!dataset/data_files/.gitkeep
+!dataset/data_files/README.md
 
 # Python
 __pycache__/

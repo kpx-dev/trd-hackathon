@@ -52,6 +52,14 @@ def load_lap_data(
     elif track_lower == "vir":
         analysis_files.append(data_root / track_lower.upper() / f"Race {race}" / f"23_AnalysisEnduranceWithSections_Race {race}_Anonymized.CSV")
         timing_files.append(data_root / track_lower.upper() / f"Race {race}" / f"{track_lower}_lap_time_R{race}.csv")
+    elif track_lower in ["road_america", "road-america"]:
+        # Road America has a nested directory structure: road-america/Road America/Race X/
+        analysis_files.append(data_root / "road-america" / "Road America" / f"Race {race}" / f"23_AnalysisEnduranceWithSections_Race {race}_Anonymized.CSV")
+        timing_files.append(data_root / "road-america" / "Road America" / f"Race {race}" / f"road_america_lap_time_R{race}.csv")
+    elif track_lower == "indianapolis":
+        # Indianapolis files are directly in the indianapolis directory
+        analysis_files.append(data_root / track_lower / f"23_AnalysisEnduranceWithSections_Race {race}.CSV")
+        timing_files.append(data_root / track_lower / f"R{race}_indianapolis_motor_speedway_lap_time.csv")
     else:
         raise ValueError(f"Unknown track: {track}")
 
@@ -72,6 +80,56 @@ def load_lap_data(
                 # logger.debug(f"Columns before cleaning: {list(df.columns[:5])}")
                 df.columns = df.columns.str.strip()
                 # logger.debug(f"Columns after cleaning: {list(df.columns[:5])}")
+
+                # Normalize alternate format (COTA Race 2) to standard format
+                if 'vehicle_id' in df.columns and 'DRIVER_NUMBER' not in df.columns:
+                    logger.info(f"Detected alternate format, normalizing columns")
+
+                    # Extract car number from vehicle_id (e.g., "GR86-002-2" -> 2)
+                    # Format is typically GR86-XXX-Y where Y is the car number
+                    df['DRIVER_NUMBER'] = df['vehicle_id'].str.extract(r'-(\d+)$')[0].astype(int)
+
+                    # Map 'lap' to 'LAP_NUMBER'
+                    if 'lap' in df.columns and 'LAP_NUMBER' not in df.columns:
+                        df['LAP_NUMBER'] = df['lap']
+
+                    # Map 'value' to 'LAP_TIME' (convert milliseconds to seconds)
+                    if 'value' in df.columns and 'LAP_TIME' not in df.columns:
+                        df['LAP_TIME'] = df['value'] / 1000.0
+
+                    # Filter out invalid laps:
+                    # - Lap number must be > 0 and < 1000 (exclude corrupted data like lap 32768)
+                    # - Lap time must be reasonable (10s-300s for most road courses)
+                    df = df[(df['LAP_NUMBER'] > 0) & (df['LAP_NUMBER'] < 1000)]
+                    df = df[(df['LAP_TIME'] >= 10.0) & (df['LAP_TIME'] <= 300.0)]
+
+                    logger.info(f"Normalized to standard format: {len(df)} valid laps")
+
+                # COTA-specific data cleansing (applies to both Race 1 and Race 2)
+                if track.lower() == 'cota':
+                    logger.info(f"Applying COTA-specific data cleansing")
+                    initial_count = len(df)
+
+                    # 1. Filter out lap 1 for all cars (always includes out-lap)
+                    df = df[df['LAP_NUMBER'] > 1]
+
+                    # 2. Focus on clean lap range for COTA (130-180s)
+                    df = df[(df['LAP_TIME'] >= 130.0) & (df['LAP_TIME'] <= 180.0)]
+
+                    # 3. Remove statistical outliers per car (> 95th percentile)
+                    id_column = 'NUMBER' if 'NUMBER' in df.columns else 'DRIVER_NUMBER'
+                    clean_rows = []
+                    for car_id in df[id_column].unique():
+                        car_data = df[df[id_column] == car_id].copy()
+                        if len(car_data) > 0:
+                            p95 = car_data['LAP_TIME'].quantile(0.95)
+                            car_clean = car_data[car_data['LAP_TIME'] <= p95]
+                            clean_rows.append(car_clean)
+
+                    if clean_rows:
+                        df = pd.concat(clean_rows, ignore_index=True)
+
+                    logger.info(f"COTA cleansing: {initial_count} -> {len(df)} laps (removed {initial_count - len(df)} outliers/out-laps)")
 
                 logger.info(f"Loaded {len(df)} lap records for {track} Race {race} from {lap_file.name}")
                 # logger.debug(f"Final column check - Has LAP_TIME: {'LAP_TIME' in df.columns}")
@@ -154,6 +212,12 @@ def load_weather_data(
             if not weather_file.exists():
                 # Try alternative patterns
                 weather_file = data_root / track_lower.upper() / f"Race {race}" / f"26_Weather_Race {race}_Anonymized.CSV"
+    elif track_lower in ["road_america", "road-america"]:
+        # Road America has nested directory structure matching lap data
+        weather_file = data_root / "road-america" / "Road America" / f"Race {race}" / f"26_Weather_Race {race}_Anonymized.CSV"
+    elif track_lower == "indianapolis":
+        # Indianapolis files are directly in the indianapolis directory
+        weather_file = data_root / track_lower / f"26_Weather_Race {race}.CSV"
     else:
         raise ValueError(f"Unknown track: {track}")
 
