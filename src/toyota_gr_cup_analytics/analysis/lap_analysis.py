@@ -29,13 +29,13 @@ def analyze_lap_progression(df: pd.DataFrame) -> Dict:
     if 'LAP_TIME' in df.columns:
         # Convert LAP_TIME from M:SS.mmm format to seconds
         lap_times = []
-        logger.debug(f"Processing {len(df['LAP_TIME'].dropna())} lap times")
+        # logger.debug(f"Processing {len(df['LAP_TIME'].dropna())} lap times")
 
         for i, lap_time_str in enumerate(df['LAP_TIME'].dropna()):
             try:
                 # Clean the string - remove whitespace and handle potential formatting issues
                 clean_time = str(lap_time_str).strip()
-                logger.debug(f"Processing lap time {i}: '{clean_time}'")
+                # logger.debug(f"Processing lap time {i}: '{clean_time}'")
 
                 if ':' in clean_time and clean_time != '':
                     parts = clean_time.split(':')
@@ -44,16 +44,18 @@ def analyze_lap_progression(df: pd.DataFrame) -> Dict:
                         seconds = float(parts[1])
                         total_seconds = minutes * 60 + seconds
                         lap_times.append(total_seconds)
-                        logger.debug(f"Converted '{clean_time}' to {total_seconds} seconds")
+                        # logger.debug(f"Converted '{clean_time}' to {total_seconds} seconds")
                     else:
-                        logger.debug(f"Skipped malformed time: '{clean_time}' (wrong number of parts)")
+                        # logger.debug(f"Skipped malformed time: '{clean_time}' (wrong number of parts)")
+                        pass
                 else:
-                    logger.debug(f"Skipped time without colon: '{clean_time}'")
+                    # logger.debug(f"Skipped time without colon: '{clean_time}'")
+                    pass
             except (ValueError, IndexError) as e:
-                logger.debug(f"Error parsing lap time '{lap_time_str}': {e}")
+                # logger.debug(f"Error parsing lap time '{lap_time_str}': {e}")
                 continue
 
-        logger.debug(f"Successfully parsed {len(lap_times)} lap times")
+        # logger.debug(f"Successfully parsed {len(lap_times)} lap times")
 
         if lap_times:
             average_lap_time = sum(lap_times) / len(lap_times)

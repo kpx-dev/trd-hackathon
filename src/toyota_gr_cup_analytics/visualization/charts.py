@@ -68,18 +68,16 @@ def create_lap_time_chart(df: pd.DataFrame, title: str = "Lap Times") -> go.Figu
                     car_times = [lt for lt, mask in zip(lap_times_seconds, car_mask) if mask]
 
                     if car_times:  # Only add trace if car has lap times
+                        hovertemplate = f'{id_label} #{car_id}: %{{y:.3f}}s<extra></extra>'
+
                         fig.add_trace(go.Scatter(
                             x=car_laps,
                             y=car_times,
                             mode='lines+markers',
                             name=f'{id_label} {car_id}',
                             line=dict(color=colors[i % len(colors)]),
-                            hovertemplate=(
-                                f'{id_label} {car_id}<br>'
-                                'Lap: %{x}<br>'
-                                'Time: %{y:.3f}s<br>'
-                                '<extra></extra>'
-                            )
+                            marker=dict(size=8),  # Larger markers for easier hovering
+                            hovertemplate=hovertemplate
                         ))
 
                 # Add fastest lap annotation
@@ -119,9 +117,15 @@ def create_lap_time_chart(df: pd.DataFrame, title: str = "Lap Times") -> go.Figu
         xaxis_title="Lap Number",
         yaxis_title="Lap Time (seconds)",
         template="plotly_white",
-        hovermode="x unified",
+        hovermode="x unified",  # Show all cars at the same lap
         showlegend=True,
-        height=600
+        height=600,
+        hoverlabel=dict(
+            bgcolor="white",
+            font_size=12,
+            font_family="monospace",
+            align="left"
+        )
     )
 
     return fig

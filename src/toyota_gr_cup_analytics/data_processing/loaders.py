@@ -34,7 +34,7 @@ def load_lap_data(
             data_root = Path("dataset/data_files")
 
     logger.info(f"Loading lap data for {track} Race {race}")
-    logger.debug(f"Data root: {data_root}")
+    # logger.debug(f"Data root: {data_root}")
 
     # Determine file pattern based on track
     track_lower = track.lower()
@@ -57,24 +57,24 @@ def load_lap_data(
 
     # Try analysis file first (preferred - has lap times)
     for lap_file in analysis_files + timing_files:
-        logger.debug(f"Looking for lap file: {lap_file}")
+        # logger.debug(f"Looking for lap file: {lap_file}")
         if lap_file.exists():
             try:
                 # Load CSV file with appropriate delimiter
                 if "AnalysisEnduranceWithSections" in lap_file.name:
-                    logger.debug(f"Loading analysis file with semicolon delimiter")
+                    # logger.debug(f"Loading analysis file with semicolon delimiter")
                     df = pd.read_csv(lap_file, delimiter=';')
                 else:
-                    logger.debug(f"Loading regular CSV file")
+                    # logger.debug(f"Loading regular CSV file")
                     df = pd.read_csv(lap_file)
 
                 # ALWAYS clean up column names (remove leading/trailing whitespace)
-                logger.debug(f"Columns before cleaning: {list(df.columns[:5])}")
+                # logger.debug(f"Columns before cleaning: {list(df.columns[:5])}")
                 df.columns = df.columns.str.strip()
-                logger.debug(f"Columns after cleaning: {list(df.columns[:5])}")
+                # logger.debug(f"Columns after cleaning: {list(df.columns[:5])}")
 
                 logger.info(f"Loaded {len(df)} lap records for {track} Race {race} from {lap_file.name}")
-                logger.debug(f"Final column check - Has LAP_TIME: {'LAP_TIME' in df.columns}")
+                # logger.debug(f"Final column check - Has LAP_TIME: {'LAP_TIME' in df.columns}")
                 return df
             except Exception as e:
                 logger.error(f"Error loading lap data from {lap_file}: {e}")
@@ -135,7 +135,7 @@ def load_weather_data(
             data_root = Path("dataset/data_files")
 
     logger.info(f"Loading weather data for {track} Race {race}")
-    logger.debug(f"Data root: {data_root}")
+    # logger.debug(f"Data root: {data_root}")
 
     track_lower = track.lower()
 
@@ -157,7 +157,7 @@ def load_weather_data(
     else:
         raise ValueError(f"Unknown track: {track}")
 
-    logger.debug(f"Looking for weather file: {weather_file}")
+    # logger.debug(f"Looking for weather file: {weather_file}")
 
     if not weather_file.exists():
         logger.warning(f"Weather data file not found: {weather_file}")
@@ -168,9 +168,9 @@ def load_weather_data(
         df = pd.read_csv(weather_file, delimiter=';')
 
         # ALWAYS clean up column names (remove leading/trailing whitespace)
-        logger.debug(f"Weather columns before cleaning: {list(df.columns[:3])}")
+        # logger.debug(f"Weather columns before cleaning: {list(df.columns[:3])}")
         df.columns = df.columns.str.strip()
-        logger.debug(f"Weather columns after cleaning: {list(df.columns[:3])}")
+        # logger.debug(f"Weather columns after cleaning: {list(df.columns[:3])}")
 
         logger.info(f"Loaded {len(df)} weather records for {track} Race {race}")
         return df
