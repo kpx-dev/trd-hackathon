@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Race Track Map Viewer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 5px;
+            background-color: #f0f0f0;
+        }
+
+        .container {
+            max-width: 95vw;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 10px;
+        }
+
+        .title-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 5px 0 10px 0;
+            gap: 20px;
+        }
+
+        .logo-container {
+            flex-shrink: 0;
+        }
+
+        .gr-cup-logo {
+            height: 80px;
+            width: auto;
+        }
+
+        .title-text {
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+        }
+
+        .event-name {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin: 0 0 5px 0;
+        }
+
+        .track-info {
+            font-size: 20px;
+            font-weight: bold;
+            color: #555;
+            margin: 0 0 3px 0;
+        }
+
+        .event-details {
+            font-size: 16px;
+            color: #666;
+            margin: 0;
+        }
+
+        .track-viewer {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .race-selector {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 15px;
+            padding: 10px;
+            flex-wrap: wrap;
+        }
+
+        .selector-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .race-selector label {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .race-selector select {
+            padding: 8px 12px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            background-color: white;
+            color: #333;
+            cursor: pointer;
+            min-width: 120px;
+        }
+
+        .race-selector select:hover {
+            border-color: #007bff;
+        }
+
+        .race-selector select:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
+
+        .timeline-controls {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .timeline-controls label {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        .time-slider {
+            width: 100%;
+            max-width: 600px;
+            height: 8px;
+            border-radius: 4px;
+            background: #ddd;
+            outline: none;
+            margin-bottom: 15px;
+        }
+
+        .time-slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+        }
+
+        .time-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            border: none;
+        }
+
+        .time-display {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .time-display span {
+            font-size: 14px;
+            color: #666;
+            font-weight: bold;
+        }
+
+        #lap-info {
+            color: #007bff;
+        }
+
+        .jump-controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .jump-button {
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+            background-color: #007bff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .jump-button:hover {
+            background-color: #0056b3;
+        }
+
+        .jump-button:active {
+            background-color: #004494;
+        }
+
+        .lap-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .lap-selector label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            margin: 0;
+        }
+
+        .lap-selector select {
+            padding: 6px 10px;
+            font-size: 14px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+            color: #333;
+            cursor: pointer;
+        }
+
+
+
+
+        #track-map {
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            margin: 0 auto;
+            display: block;
+        }
+
+        /* Responsive design for smaller screens */
+        @media (max-width: 768px) {
+            .title-container {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .title-text {
+                text-align: center;
+            }
+
+            .gr-cup-logo {
+                height: 60px;
+            }
+
+            .event-name {
+                font-size: 20px;
+            }
+
+            .track-info {
+                font-size: 18px;
+            }
+
+            .event-details {
+                font-size: 14px;
+            }
+
+            .race-selector label {
+                font-size: 14px;
+                display: block;
+                margin-bottom: 8px;
+                margin-right: 0;
+            }
+
+            .race-selector select {
+                font-size: 14px;
+                min-width: 100px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title-container">
+            <div class="logo-container">
+                <img src="gr_cup_namer.png" alt="GR Cup North America" class="gr-cup-logo">
+            </div>
+            <div class="title-text">
+                <div class="event-name" id="event-name">Toyota GR Cup</div>
+                <div class="track-info" id="track-info">Loading track information...</div>
+                <div class="event-details" id="event-details">Loading event details...</div>
+            </div>
+        </div>
+
+        <div class="track-viewer">
+            <svg id="track-map"></svg>
+        </div>
+
+        <div class="race-selector">
+            <div class="selector-group">
+                <label for="race-dropdown">Select Race:</label>
+                <select id="race-dropdown">
+                    <option value="race1">Race 1</option>
+                    <option value="race2">Race 2</option>
+                </select>
+            </div>
+
+            <div class="selector-group">
+                <label for="car-dropdown">Select Car:</label>
+                <select id="car-dropdown">
+                    <option value="">Loading cars...</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="timeline-controls">
+            <label for="time-slider">Race Time:</label>
+            <input type="range" id="time-slider" min="0" max="100" value="0" class="time-slider">
+            <div class="time-display">
+                <span id="current-time">00:00:00</span> / <span id="total-time">00:00:00</span>
+                <span id="lap-info">Lap: 1</span>
+            </div>
+
+            <div class="jump-controls">
+                <button id="jump-back-10s" class="jump-button">◀◀ -10s</button>
+                <button id="jump-forward-10s" class="jump-button">+10s ▶▶</button>
+                <div class="lap-selector">
+                    <label for="lap-dropdown">Jump to Lap:</label>
+                    <select id="lap-dropdown">
+                        <option value="">Select Lap</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="track-map.js"></script>
+</body>
+</html>

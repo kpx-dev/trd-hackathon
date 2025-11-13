@@ -3,6 +3,10 @@ dataset/data_files/
 !dataset/data_files/.gitkeep
 !dataset/data_files/README.md
 
+# Track maps - exclude PDF files (keep locally only)
+dataset/track_maps/*.pdf
+!dataset/track_maps/.gitkeep
+
 # Python
 __pycache__/
 *.py[cod]

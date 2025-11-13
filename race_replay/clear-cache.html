@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Cache & Reload</title>
+    <script>
+        // Force clear cache and reload the main app
+        if (window.location.pathname.includes('clear-cache.html')) {
+            // Clear localStorage and sessionStorage
+            localStorage.clear();
+            sessionStorage.clear();
+
+            // Redirect to main app with cache-busting parameter
+            const timestamp = new Date().getTime();
+            window.location.href = `index.html?nocache=${timestamp}`;
+        }
+    </script>
+</head>
+<body>
+    <h1>Clearing cache and reloading...</h1>
+    <p>You should be redirected automatically.</p>
+    <p>If not, <a href="index.html">click here to go to the main app</a>.</p>
+</body>
+</html>
