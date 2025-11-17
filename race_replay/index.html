@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Race Track Map Viewer</title>
+    <title>Race Track Map Viewer - API Version</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
+        /* Same styles as original index.html */
         body {
             font-family: Arial, sans-serif;
             margin: 0;
@@ -65,6 +66,7 @@
             margin: 0;
         }
 
+
         .track-viewer {
             text-align: center;
             margin-bottom: 15px;
@@ -77,7 +79,7 @@
         }
 
         .left-controls {
-            width: 250px;
+            width: 320px;
             flex-shrink: 0;
             display: flex;
             flex-direction: column;
@@ -104,7 +106,10 @@
         .map-container {
             flex: 1;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
+            align-items: center;
+            max-width: calc(100vw - 660px);
+            min-width: 600px;
         }
 
         .telemetry-sidebar {
@@ -215,10 +220,13 @@
 
         .timeline-controls {
             text-align: center;
-            margin-top: 20px;
-            padding: 15px;
+            margin-top: 15px;
+            padding: 12px;
             background-color: #f8f9fa;
+            border: 2px solid #ddd;
             border-radius: 8px;
+            width: 100%;
+            max-width: 800px;
         }
 
         .timeline-controls label {
@@ -278,8 +286,8 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            gap: 15px;
-            margin-top: 15px;
+            gap: 10px;
+            margin-top: 10px;
             flex-wrap: wrap;
         }
 
@@ -352,9 +360,6 @@
             cursor: pointer;
         }
 
-
-
-
         #track-map {
             border: 2px solid #ddd;
             border-radius: 5px;
@@ -394,6 +399,7 @@
             text-align: right;
         }
 
+
         /* Responsive design for smaller screens */
         @media (max-width: 768px) {
             .main-content {
@@ -414,6 +420,7 @@
                 width: 100%;
                 order: 3;
             }
+
 
             .title-container {
                 flex-direction: column;
@@ -449,11 +456,12 @@
                 <img src="gr_cup_namer.png" alt="GR Cup North America" class="gr-cup-logo">
             </div>
             <div class="title-text">
-                <div class="event-name" id="event-name">Toyota GR Cup</div>
+                <div class="event-name" id="event-name">Toyota GR Cup - API Demo</div>
                 <div class="track-info" id="track-info">Loading track information...</div>
                 <div class="event-details" id="event-details">Loading event details...</div>
             </div>
         </div>
+
 
         <div class="main-content">
             <div class="left-controls">
@@ -463,8 +471,8 @@
                     <div class="selector-group">
                         <label for="race-dropdown">Select Race:</label>
                         <select id="race-dropdown">
-                            <option value="race1">Race 1</option>
-                            <option value="race2">Race 2</option>
+                            <option value="R1">Race 1</option>
+                            <option value="R2">Race 2</option>
                         </select>
                     </div>
 
@@ -481,27 +489,54 @@
 
                     <div class="lap-data-card">
                         <div class="lap-data-row">
-                            <span class="lap-data-label">Lap Number:</span>
+                            <span class="lap-data-label">Current Lap:</span>
                             <span class="lap-data-value" id="lap-number-value">--</span>
                         </div>
                         <div class="lap-data-row">
-                            <span class="lap-data-label">Lap Start Time:</span>
-                            <span class="lap-data-value" id="lap-start-time-value">--:--:---</span>
-                        </div>
-                        <div class="lap-data-row">
-                            <span class="lap-data-label">Lap End Time:</span>
-                            <span class="lap-data-value" id="lap-end-time-value">--:--:---</span>
-                        </div>
-                        <div class="lap-data-row">
-                            <span class="lap-data-label">Lap Total Time:</span>
+                            <span class="lap-data-label">Lap Time:</span>
                             <span class="lap-data-value" id="lap-total-time-value">--:--:---</span>
+                        </div>
+                        <div class="lap-data-row">
+                            <span class="lap-data-label">Best Lap:</span>
+                            <span class="lap-data-value" id="best-lap-value">--</span>
+                        </div>
+                        <div class="lap-data-row">
+                            <span class="lap-data-label">Best Time:</span>
+                            <span class="lap-data-value" id="best-lap-time-value">--:--:---</span>
+                        </div>
+                        <div class="lap-data-row">
+                            <span class="lap-data-label">Time Delta:</span>
+                            <span class="lap-data-value" id="time-delta-value">--:--:---</span>
                         </div>
                     </div>
                 </div>
+
             </div>
 
             <div class="map-container">
                 <svg id="track-map"></svg>
+
+                <!-- Timeline controls moved here for better positioning -->
+                <div class="timeline-controls">
+                    <label for="time-slider">Race Time:</label>
+                    <input type="range" id="time-slider" min="0" max="100" value="0" class="time-slider">
+                    <div class="time-display">
+                        <span id="current-time">00:00:00</span> / <span id="total-time">00:00:00</span>
+                        <span id="lap-info">Lap: 1</span>
+                    </div>
+
+                    <div class="video-controls">
+                        <button id="step-back-5s" class="video-button">⏮ -5s</button>
+                        <button id="play-pause-button" class="video-button play-button">▶️ Play</button>
+                        <button id="step-forward-5s" class="video-button">+5s ⏭</button>
+                        <div class="lap-selector">
+                            <label for="lap-dropdown">Jump to Lap:</label>
+                            <select id="lap-dropdown">
+                                <option value="">Select Lap</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="telemetry-sidebar">
@@ -516,8 +551,8 @@
                 </div>
 
                 <div class="telemetry-card">
-                    <div class="telemetry-label">Gear</div>
-                    <div class="telemetry-value" id="gear-value">--</div>
+                    <div class="telemetry-label">Engine RPM</div>
+                    <div class="telemetry-value" id="engine-rpm-value">--</div>
                 </div>
 
                 <div class="telemetry-card">
@@ -526,40 +561,45 @@
                 </div>
 
                 <div class="telemetry-card">
-                    <div class="telemetry-label">Rear Brake Pressure</div>
-                    <div class="telemetry-value" id="brake-rear-value">--</div>
+                    <div class="telemetry-label">Gear</div>
+                    <div class="telemetry-value" id="gear-value">--</div>
                 </div>
 
                 <div class="telemetry-card">
                     <div class="telemetry-label">Front Brake Pressure</div>
                     <div class="telemetry-value" id="brake-front-value">--</div>
                 </div>
-            </div>
-        </div>
 
-        <div class="timeline-controls">
-            <label for="time-slider">Race Time:</label>
-            <input type="range" id="time-slider" min="0" max="100" value="0" class="time-slider">
-            <div class="time-display">
-                <span id="current-time">00:00:00</span> / <span id="total-time">00:00:00</span>
-                <span id="lap-info">Lap: 1</span>
-            </div>
+                <div class="telemetry-card">
+                    <div class="telemetry-label">Rear Brake Pressure</div>
+                    <div class="telemetry-value" id="brake-rear-value">--</div>
+                </div>
 
-            <div class="video-controls">
-                <button id="step-back-5s" class="video-button">⏮ -5s</button>
-                <button id="play-pause-button" class="video-button play-button">▶️ Play</button>
-                <button id="step-forward-5s" class="video-button">+5s ⏭</button>
-                <div class="lap-selector">
-                    <label for="lap-dropdown">Jump to Lap:</label>
-                    <select id="lap-dropdown">
-                        <option value="">Select Lap</option>
-                    </select>
+                <div class="telemetry-card">
+                    <div class="telemetry-label">Steering Angle</div>
+                    <div class="telemetry-value" id="steering-angle-value">--</div>
+                </div>
+
+                <div class="telemetry-card">
+                    <div class="telemetry-label">Lateral G-Force</div>
+                    <div class="telemetry-value" id="g-force-y-value">--</div>
+                </div>
+
+                <div class="telemetry-card">
+                    <div class="telemetry-label">Longitudinal G-Force</div>
+                    <div class="telemetry-value" id="g-force-x-value">--</div>
+                </div>
+
+                <div class="telemetry-card">
+                    <div class="telemetry-label">Lap Distance</div>
+                    <div class="telemetry-value" id="lap-distance-value">--</div>
                 </div>
             </div>
         </div>
 
     </div>
 
-    <script src="track-map.js"></script>
+    <script src="track-map.js?v=1731603415"></script>
+
 </body>
 </html>

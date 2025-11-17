@@ -1,50 +1,76 @@
-class TrackMapViewer {
+/**
+ * API-Based Track Map Viewer - Prototype
+ * Demonstrates using server API instead of pre-processed files
+ * Maintains smooth playback with chunked data loading
+ */
+
+class ApiTrackMapViewer {
     constructor() {
+        // Visual components (same as original)
         this.svg = null;
         this.g = null;
         this.zoom = null;
         this.currentZoom = 1;
         this.imageWidth = 0;
         this.imageHeight = 0;
-        this.containerWidth = Math.min(window.innerWidth * 0.9, 1400);
-        this.containerHeight = Math.min(window.innerHeight * 0.765, 900);
-        this.trackData = null;
-        this.selectedRace = 'race1'; // Default to Race 1
-        this.telemetryData = [];
-        this.availableCars = [];
+        this.containerWidth = Math.min(window.innerWidth * 0.9, 1200);
+        this.containerHeight = Math.min(window.innerHeight * 0.765, 800);
+
+        // Data management (API-based)
+        this.baseUrl = 'http://localhost:8001/api';
+        this.selectedRace = 'R1';
         this.selectedCar = null;
         this.timelineData = [];
-        this.carMarker = null;
-        this.showFullTrace = false;
+        this.dataChunks = new Map(); // Cache for loaded chunks
+        this.currentPosition = 0;
 
-        // Video playback controls
+        // Playback controls
         this.isPlaying = false;
         this.playbackInterval = null;
-        this.playbackSpeed = 1; // 1x speed = real race speed
-
-        // Speed unit toggle (default: mph)
+        this.playbackSpeed = 1;
         this.speedUnit = 'mph';
 
-        // Lap data
-        this.lapData = {
-            lapStarts: {},
-            lapEnds: {},
-            lapTimes: {}
+        // Last known telemetry values for fallback
+        this.lastKnownTelemetry = {
+            speed: null,
+            gear: null,
+            throttle: null,
+            brake_rear: null,
+            brake_front: null,
+            engine_rpm: null,
+            steering_angle: null,
+            g_force_x: null,
+            g_force_y: null,
+            lap_distance: null
         };
+
+        // Chunk management
+        this.chunkSizeSeconds = 60; // Load 60-second chunks
+        this.preloadAhead = 2; // Preload 2 chunks ahead
+
+        // Visual elements
+        this.carMarker = null;
+        this.trackData = null;
+        this.lapData = {};
+        this.bestLapInfo = null;
+
 
         this.init();
     }
 
-    init() {
-        // Set up SVG container
+    async init() {
+        console.log('🚀 Initializing API-based Track Map Viewer...');
+
+        // Set up SVG container (same as original)
+        console.log('📐 Setting up SVG container...');
         this.svg = d3.select("#track-map")
             .attr("width", this.containerWidth)
             .attr("height", this.containerHeight);
 
-        // Create main group for transformations
         this.g = this.svg.append("g");
 
         // Set up zoom behavior
+        console.log('🔍 Setting up zoom behavior...');
         this.zoom = d3.zoom()
             .scaleExtent([0.1, 10])
             .on("zoom", (event) => {
@@ -54,28 +80,40 @@ class TrackMapViewer {
 
         this.svg.call(this.zoom);
 
-        // Load track data first, then the map
-        this.loadTrackData();
+        // Load initial data
+        console.log('📊 Loading initial data...');
+        await this.loadTrackData();
+        await this.loadRaces();
 
-        // Set up race selector
+        // Setup UI components
+        console.log('🎛️ Setting up UI components...');
         this.setupRaceSelector();
-
-        // Set up car selector and timeline
         this.setupCarSelector();
         this.setupTimeline();
 
-        // Handle window resize
+        // Disable Race Time controls initially (no car loaded)
+        this.disableRaceTimeControls();
+
+        console.log("🗺️ About to load track map...");
+        this.loadTrackMap();
+        console.log("🗺️ Track map loading initiated");
+
+        // Load initial car data
+        console.log("🔄 About to load available cars...");
+        await this.loadAvailableCars();
+        console.log("✅ Car loading completed in init");
+
         window.addEventListener('resize', () => {
             this.updateContainerSize();
         });
     }
 
     async loadTrackData() {
+        // Use same track data as original (static)
         try {
             const response = await fetch('gr_cup_track_info.csv');
             const csvText = await response.text();
 
-            // Parse CSV
             const lines = csvText.trim().split('\n');
             const headers = lines[0].split(',').map(h => h.trim());
 
@@ -89,7 +127,6 @@ class TrackMapViewer {
                 tracks.push(track);
             }
 
-            // Find Barber Motorsports Park data
             this.trackData = tracks.find(track =>
                 track.track_name === 'Barber Motorsports Park'
             );
@@ -98,117 +135,194 @@ class TrackMapViewer {
                 this.updateTitle();
             }
 
-            console.log('Track data loaded:', this.trackData);
+            console.log('✅ Track data loaded:', this.trackData);
         } catch (error) {
-            console.error('Failed to load track data:', error);
-        }
-
-        // Load the track map image, telemetry data, and lap data
-        this.loadTrackMap();
-        this.loadTelemetryData();
-        this.loadLapData();
-    }
-
-    async loadLapData() {
-        try {
-            console.log('Loading lap data...');
-
-            // Load all lap data files for both races
-            const files = [
-                'dataset/data_files/barber/R1_barber_lap_start.csv',
-                'dataset/data_files/barber/R1_barber_lap_end.csv',
-                'dataset/data_files/barber/R1_barber_lap_time.csv',
-                'dataset/data_files/barber/R2_barber_lap_start.csv',
-                'dataset/data_files/barber/R2_barber_lap_end.csv',
-                'dataset/data_files/barber/R2_barber_lap_time.csv'
-            ];
-
-            // Load all files in parallel
-            const filePromises = files.map(file => this.loadLapDataFile(file));
-            await Promise.all(filePromises);
-
-            console.log('All lap data loaded successfully');
-            console.log('Lap data structure:', this.lapData);
-
-        } catch (error) {
-            console.error('Failed to load lap data:', error);
+            console.error('❌ Failed to load track data:', error);
         }
     }
 
-    async loadLapDataFile(filePath) {
+    async loadRaces() {
         try {
-            const response = await fetch(filePath);
+            const response = await fetch(`${this.baseUrl}/races`);
+            const data = await response.json();
+            console.log('✅ Available races:', data.races);
+        } catch (error) {
+            console.error('❌ Error loading races:', error);
+        }
+    }
+
+    async loadAvailableCars() {
+        try {
+            console.log(`📊 Loading available cars for ${this.selectedRace}...`);
+
+            const response = await fetch(`${this.baseUrl}/races/${this.selectedRace}/cars`);
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                throw new Error(`HTTP ${response.status}`);
             }
 
-            const csvText = await response.text();
-            const lines = csvText.trim().split('\n');
-            const headers = lines[0].split(',').map(h => h.trim());
+            const data = await response.json();
+            this.availableCars = data.cars;
 
-            // Parse CSV data
-            for (let i = 1; i < lines.length; i++) {
-                const values = lines[i].split(',').map(v => v.trim());
-                const row = {};
-                headers.forEach((header, index) => {
-                    row[header] = values[index];
-                });
-
-                const vehicleId = row.vehicle_id;
-                const lap = parseInt(row.lap);
-                const race = row.meta_session; // R1 or R2
-                const timestamp = row.timestamp;
-
-                if (!vehicleId || !lap || !race || !timestamp) continue;
-
-                // Determine data type from file path
-                let dataType;
-                if (filePath.includes('lap_start')) {
-                    dataType = 'lapStarts';
-                } else if (filePath.includes('lap_end')) {
-                    dataType = 'lapEnds';
-                } else if (filePath.includes('lap_time')) {
-                    dataType = 'lapTimes';
-                }
-
-                // Initialize nested structure if needed
-                if (!this.lapData[dataType][race]) {
-                    this.lapData[dataType][race] = {};
-                }
-                if (!this.lapData[dataType][race][vehicleId]) {
-                    this.lapData[dataType][race][vehicleId] = {};
-                }
-
-                // Store the timestamp for this lap
-                this.lapData[dataType][race][vehicleId][lap] = timestamp;
-            }
-
-            console.log(`Loaded lap data from: ${filePath}`);
+            console.log(`✅ Found ${this.availableCars.length} cars for ${this.selectedRace}`);
+            this.populateCarDropdown();
 
         } catch (error) {
-            console.error(`Failed to load lap data file ${filePath}:`, error);
+            console.error('❌ Error loading cars:', error);
+            this.showError(`Failed to load cars for ${this.selectedRace}`);
         }
     }
 
-    updateTitle() {
-        if (!this.trackData) return;
+    async loadCarTimeline(carId) {
+        try {
+            console.log(`📈 Loading timeline for ${carId}...`);
 
-        // Hide the event name since it's now in the logo
-        const eventNameElement = document.getElementById('event-name');
-        if (eventNameElement) {
-            eventNameElement.style.display = 'none';
+            const response = await fetch(`${this.baseUrl}/telemetry/${this.selectedRace}/${carId}/timeline`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            this.timelineData = data.timeline;
+
+            console.log(`✅ Timeline loaded: ${data.total_points} points, ${data.duration_seconds}s duration`);
+
+            // Load lap data
+            await this.loadLapData(carId);
+
+            return data;
+
+        } catch (error) {
+            console.error('❌ Error loading timeline:', error);
+            throw error;
         }
-
-        // Update track info: "BARBER MOTORSPORTS PARK | 2.38 MILES"
-        const trackInfoElement = document.getElementById('track-info');
-        if (trackInfoElement) {
-            trackInfoElement.textContent =
-                `${this.trackData.track_name.toUpperCase()} | ${this.trackData.track_length.toUpperCase()}`;
-        }
-
-        // Update event details with race information
-        this.updateRaceInTitle();
     }
+
+    async loadLapData(carId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/laps/${this.selectedRace}/${carId}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            this.lapData = data.laps;
+            this.bestLapInfo = {
+                bestLap: data.best_lap,
+                bestLapTime: data.best_lap_time,
+                bestLapTimeMs: data.best_lap_time_ms
+            };
+
+            console.log('✅ Lap data loaded:', Object.keys(this.lapData).length, 'laps');
+            console.log('✅ Best lap:', data.best_lap, 'with time:', data.best_lap_time);
+
+        } catch (error) {
+            console.error('❌ Error loading lap data:', error);
+        }
+    }
+
+
+    async loadDataChunk(startIndex, endIndex) {
+        try {
+            if (!this.timelineData.length) return null;
+
+            const startTime = this.timelineData[startIndex]?.timestamp;
+            const endTime = this.timelineData[endIndex]?.timestamp;
+
+            if (!startTime || !endTime) return null;
+
+            console.log(`📦 Loading chunk: ${startIndex}-${endIndex} (${startTime} to ${endTime})`);
+
+            const response = await fetch(
+                `${this.baseUrl}/telemetry/${this.selectedRace}/${this.selectedCar}/chunk?start_time=${encodeURIComponent(startTime)}&end_time=${encodeURIComponent(endTime)}`
+            );
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // Cache the chunk
+            const chunkId = `${startIndex}-${endIndex}`;
+            this.dataChunks.set(chunkId, data.data);
+
+            console.log(`✅ Chunk loaded: ${data.total_points} data points`);
+
+            return data.data;
+
+        } catch (error) {
+            console.error('❌ Error loading data chunk:', error);
+            return null;
+        }
+    }
+
+    async ensureDataLoaded(position) {
+        if (!this.timelineData.length) return null;
+
+        // Calculate chunk boundaries
+        const chunkSize = Math.min(this.chunkSizeSeconds * 10, 600); // ~60 seconds worth of data points
+        const chunkStart = Math.floor(position / chunkSize) * chunkSize;
+        const chunkEnd = Math.min(chunkStart + chunkSize, this.timelineData.length - 1);
+        const chunkId = `${chunkStart}-${chunkEnd}`;
+
+        // Check if chunk is already loaded
+        if (this.dataChunks.has(chunkId)) {
+            return this.dataChunks.get(chunkId);
+        }
+
+        // Load current chunk
+        const chunk = await this.loadDataChunk(chunkStart, chunkEnd);
+
+        // Preload next chunks in background
+        for (let i = 1; i <= this.preloadAhead; i++) {
+            const nextChunkStart = chunkStart + (i * chunkSize);
+            const nextChunkEnd = Math.min(nextChunkStart + chunkSize, this.timelineData.length - 1);
+            const nextChunkId = `${nextChunkStart}-${nextChunkEnd}`;
+
+            if (!this.dataChunks.has(nextChunkId) && nextChunkStart < this.timelineData.length) {
+                // Load in background without waiting
+                this.loadDataChunk(nextChunkStart, nextChunkEnd).catch(console.error);
+            }
+        }
+
+        return chunk;
+    }
+
+    async getDataAtPosition(position) {
+        const chunk = await this.ensureDataLoaded(position);
+
+        if (!chunk || !this.timelineData[position]) {
+            return null;
+        }
+
+        // Find matching data point by timestamp - first try exact match
+        const targetTimestamp = this.timelineData[position].timestamp;
+        let dataPoint = chunk.find(point => point.timestamp === targetTimestamp);
+
+        // If no exact match, find closest timestamp within a reasonable range
+        if (!dataPoint && chunk.length > 0) {
+            const targetTime = new Date(targetTimestamp).getTime();
+            let closestPoint = null;
+            let minTimeDiff = Infinity;
+
+            for (const point of chunk) {
+                const pointTime = new Date(point.timestamp).getTime();
+                const timeDiff = Math.abs(pointTime - targetTime);
+
+                // Only consider points within 1 second of target time
+                if (timeDiff < 1000 && timeDiff < minTimeDiff) {
+                    minTimeDiff = timeDiff;
+                    closestPoint = point;
+                }
+            }
+
+            dataPoint = closestPoint;
+        }
+
+        return dataPoint || null;
+    }
+
+    // === UI Event Handlers (adapted from original) ===
 
     setupRaceSelector() {
         const raceDropdown = document.getElementById('race-dropdown');
@@ -217,187 +331,34 @@ class TrackMapViewer {
                 this.selectedRace = event.target.value;
                 this.onRaceSelectionChange();
             });
-
-            // Set initial value
             raceDropdown.value = this.selectedRace;
         }
     }
 
-    onRaceSelectionChange() {
-        console.log(`Race selection changed to: ${this.selectedRace}`);
+    async onRaceSelectionChange() {
+        console.log(`🏁 Race selection changed to: ${this.selectedRace}`);
 
-        // Pause any ongoing playback
         this.pausePlayback();
-
-        // Clear existing car selection and data
         this.selectedCar = null;
         this.timelineData = [];
-        this.telemetryData = [];
-        this.availableCars = [];
+        this.dataChunks.clear();
 
-        // Clear car dropdown
+        // Disable Race Time controls during race change
+        this.disableRaceTimeControls();
+
         const carDropdown = document.getElementById('car-dropdown');
         if (carDropdown) {
             carDropdown.innerHTML = '<option value="">Loading cars...</option>';
             carDropdown.value = '';
         }
 
-        // Clear any existing GPS traces and car markers
-        this.g.selectAll('.gps-trace').remove();
-        this.g.selectAll('.car-marker').remove();
-
-        // Update the title to show which race is selected
+        this.clearVisuals();
         this.updateRaceInTitle();
 
-        // Load car data for the new race selection
-        this.loadTelemetryData();
-    }
+        await this.loadAvailableCars();
 
-    updateRaceInTitle() {
-        // Add race information to the event details
-        const eventDetailsElement = document.getElementById('event-details');
-        if (eventDetailsElement && this.trackData) {
-            const locationParts = this.trackData.location.split(' ');
-            const state = locationParts[locationParts.length - 1];
-            const city = locationParts.slice(0, -1).join(' ');
-
-            const raceNumber = this.selectedRace === 'race1' ? '1' : '2';
-            eventDetailsElement.textContent =
-                `${this.trackData.event_dates.toUpperCase()} | ${city.toUpperCase()}, ${state.toUpperCase()} | RACE ${raceNumber}`;
-        }
-    }
-
-    updateContainerSize() {
-        const newWidth = Math.min(window.innerWidth * 0.9, 1400);
-        const newHeight = Math.min(window.innerHeight * 0.765, 900);
-
-        if (newWidth !== this.containerWidth || newHeight !== this.containerHeight) {
-            this.containerWidth = newWidth;
-            this.containerHeight = newHeight;
-
-            this.svg
-                .attr("width", this.containerWidth)
-                .attr("height", this.containerHeight);
-
-            // Refit the image if it was loaded
-            if (this.imageWidth > 0 && this.imageHeight > 0) {
-                this.fitToScreen();
-            }
-        }
-    }
-
-    loadTrackMap() {
-        // Create a temporary image to get dimensions
-        const img = new Image();
-
-        // Add cache-busting timestamp to force reload of updated image
-        const timestamp = new Date().getTime();
-        const imageUrl = `race_maps/barber motorsports park.png?t=${timestamp}`;
-
-        img.onload = () => {
-            this.imageWidth = img.width;
-            this.imageHeight = img.height;
-
-            // Add the image to the SVG with cache-busting URL
-            this.g.append("image")
-                .attr("href", imageUrl)
-                .attr("width", this.imageWidth)
-                .attr("height", this.imageHeight)
-                .attr("x", 0)
-                .attr("y", 0);
-
-            // Fit image to container initially
-            this.fitToScreen();
-
-            // Add start/finish line indicator
-            this.drawStartFinishLine();
-
-            console.log(`Track map loaded: ${this.imageWidth}x${this.imageHeight}`);
-            console.log(`Image URL: ${imageUrl}`);
-        };
-
-        img.onerror = () => {
-            console.error("Failed to load track map image");
-            this.showError("Failed to load track map. Please check if the image file exists.");
-        };
-
-        img.src = imageUrl;
-    }
-
-    drawStartFinishLine() {
-        // Start/finish line position based on typical P1 location on main straight
-        // Using GPS coordinates that represent the start/finish area at Barber Motorsports Park
-        const startFinishLat = 33.53260; // Representative latitude for start/finish line
-        const startFinishLon = -86.61963; // Representative longitude for start/finish line
-
-        const coords = this.convertGPSToMap(startFinishLat, startFinishLon);
-
-        if (coords) {
-            // Create start/finish line group for easy management
-            const startFinishGroup = this.g.append("g").attr("class", "start-finish-line");
-
-            // Draw the checkered flag pattern line
-            const lineLength = 40;
-            const lineWidth = 6;
-
-            // Main line (white background)
-            startFinishGroup.append("rect")
-                .attr("x", coords.x - lineLength/2)
-                .attr("y", coords.y - lineWidth/2)
-                .attr("width", lineLength)
-                .attr("height", lineWidth)
-                .attr("fill", "white")
-                .attr("stroke", "black")
-                .attr("stroke-width", 2);
-
-            // Apply 45-degree rotation to the entire group
-            startFinishGroup.attr("transform", `rotate(45, ${coords.x}, ${coords.y})`);
-
-            // Checkered pattern
-            const squareSize = 4;
-            for (let i = 0; i < lineLength / squareSize; i++) {
-                if (i % 2 === 0) { // Alternate black squares
-                    startFinishGroup.append("rect")
-                        .attr("x", coords.x - lineLength/2 + i * squareSize)
-                        .attr("y", coords.y - lineWidth/2)
-                        .attr("width", squareSize)
-                        .attr("height", lineWidth)
-                        .attr("fill", "black");
-                }
-            }
-
-            console.log(`Start/finish line drawn at GPS: ${startFinishLat.toFixed(6)}, ${startFinishLon.toFixed(6)} -> Map: ${coords.x.toFixed(1)}, ${coords.y.toFixed(1)}`);
-        } else {
-            console.log("Could not place start/finish line - coordinates out of bounds");
-        }
-    }
-
-    resetZoom() {
-        this.svg.transition()
-            .duration(500)
-            .call(this.zoom.transform, d3.zoomIdentity);
-    }
-
-    fitToScreen() {
-        if (this.imageWidth === 0 || this.imageHeight === 0) {
-            return; // Image not loaded yet
-        }
-
-        // Calculate scale to fit image in container with some padding
-        const padding = 20;
-        const scaleX = (this.containerWidth - padding * 2) / this.imageWidth;
-        const scaleY = (this.containerHeight - padding * 2) / this.imageHeight;
-        const scale = Math.min(scaleX, scaleY);
-
-        // Calculate translation to center the image
-        const x = (this.containerWidth - this.imageWidth * scale) / 2;
-        const y = (this.containerHeight - this.imageHeight * scale) / 2;
-
-        const transform = d3.zoomIdentity.translate(x, y).scale(scale);
-
-        this.svg.transition()
-            .duration(500)
-            .call(this.zoom.transform, transform);
+        // Keep controls disabled until a car is selected
+        // They will be re-enabled in onCarSelectionChange()
     }
 
     setupCarSelector() {
@@ -410,6 +371,76 @@ class TrackMapViewer {
         }
     }
 
+    async onCarSelectionChange() {
+        if (!this.selectedCar) return;
+
+        console.log(`🚗 Car selected: ${this.selectedCar}`);
+
+        this.pausePlayback();
+        this.dataChunks.clear();
+
+        // Clear previous car visuals and telemetry data immediately
+        this.clearVisuals();
+        this.clearLastKnownTelemetry();
+
+        // Disable Race Time controls during loading
+        this.disableRaceTimeControls();
+
+        this.showStatusMessage(`Loading data for ${this.selectedCar}...`);
+
+        try {
+            await this.loadCarTimeline(this.selectedCar);
+            this.updateTimeline();
+
+            // Load initial chunk and show first position
+            await this.updateCarPosition(0);
+
+            // Draw GPS trace for the selected car
+            await this.drawGPSTrace();
+
+            // Populate lap dropdown with available laps
+            this.populateLapDropdown();
+
+            // Hide loading message after GPS trace is complete
+            this.hideStatusMessage();
+
+            // Re-enable Race Time controls after loading is complete
+            this.enableRaceTimeControls();
+
+        } catch (error) {
+            this.showError(`Failed to load data for ${this.selectedCar}`);
+            this.hideStatusMessage();
+
+            // Re-enable controls even on error
+            this.enableRaceTimeControls();
+        }
+    }
+
+    populateCarDropdown() {
+        const carDropdown = document.getElementById('car-dropdown');
+        if (!carDropdown) return;
+
+        if (!this.availableCars || this.availableCars.length === 0) {
+            carDropdown.innerHTML = '<option value="">No cars available for this race</option>';
+            return;
+        }
+
+        carDropdown.innerHTML = '<option value="">Select a car...</option>';
+
+        this.availableCars.forEach(car => {
+            const option = document.createElement('option');
+            option.value = car.id;
+            option.textContent = car.display_name;
+            carDropdown.appendChild(option);
+        });
+
+        console.log(`✅ Populated dropdown with ${this.availableCars.length} cars for ${this.selectedRace}`);
+
+        if (this.availableCars.length > 0) {
+            setTimeout(() => carDropdown.focus(), 100);
+        }
+    }
+
     setupTimeline() {
         const timeSlider = document.getElementById('time-slider');
         if (timeSlider) {
@@ -418,7 +449,6 @@ class TrackMapViewer {
             });
         }
 
-        // Setup video controls
         this.setupVideoControls();
     }
 
@@ -429,9 +459,7 @@ class TrackMapViewer {
         const lapDropdown = document.getElementById('lap-dropdown');
 
         if (playPauseButton) {
-            playPauseButton.addEventListener('click', () => {
-                this.togglePlayPause();
-            });
+            playPauseButton.addEventListener('click', () => this.togglePlayPause());
         }
 
         if (stepBack5s) {
@@ -459,48 +487,62 @@ class TrackMapViewer {
         }
     }
 
-    jumpTime(seconds) {
+    updateTimeline() {
         const timeSlider = document.getElementById('time-slider');
-        if (!timeSlider || !this.timelineData.length) return;
+        const totalTimeSpan = document.getElementById('total-time');
 
-        const currentIndex = parseInt(timeSlider.value);
-        const startTime = new Date(this.timelineData[0].timestamp);
-        const currentTime = new Date(this.timelineData[currentIndex].timestamp);
+        if (timeSlider && this.timelineData.length > 0) {
+            timeSlider.max = this.timelineData.length - 1;
+            timeSlider.value = 0;
 
-        // Calculate target time
-        const targetTime = new Date(currentTime.getTime() + seconds * 1000);
+            const startTime = new Date(this.timelineData[0].timestamp);
+            const endTime = new Date(this.timelineData[this.timelineData.length - 1].timestamp);
+            const totalSeconds = (endTime - startTime) / 1000;
 
-        // Find closest data point to target time
-        let closestIndex = currentIndex;
-        let minDiff = Math.abs(new Date(this.timelineData[currentIndex].timestamp) - targetTime);
-
-        for (let i = 0; i < this.timelineData.length; i++) {
-            const diff = Math.abs(new Date(this.timelineData[i].timestamp) - targetTime);
-            if (diff < minDiff) {
-                minDiff = diff;
-                closestIndex = i;
+            if (totalTimeSpan) {
+                totalTimeSpan.textContent = this.formatTime(totalSeconds);
             }
-        }
 
-        // Update slider and car position
-        timeSlider.value = closestIndex;
-        this.updateCarPosition(closestIndex);
-    }
-
-    jumpToLap(lapNumber) {
-        if (!this.timelineData.length) return;
-
-        // Find first data point of the specified lap
-        const lapStartIndex = this.timelineData.findIndex(point => point.lap === lapNumber);
-
-        if (lapStartIndex !== -1) {
-            const timeSlider = document.getElementById('time-slider');
-            if (timeSlider) {
-                timeSlider.value = lapStartIndex;
-                this.updateCarPosition(lapStartIndex);
-            }
+            this.currentPosition = 0;
         }
     }
+
+    async updateCarPosition(position) {
+        if (position < 0 || position >= this.timelineData.length) {
+            return;
+        }
+
+        this.currentPosition = position;
+
+        // Update time display
+        const currentTimeSpan = document.getElementById('current-time');
+        const lapInfoSpan = document.getElementById('lap-info');
+
+        if (currentTimeSpan && this.timelineData.length > 0) {
+            const startTime = new Date(this.timelineData[0].timestamp);
+            const currentTime = new Date(this.timelineData[position].timestamp);
+            const elapsedSeconds = (currentTime - startTime) / 1000;
+            currentTimeSpan.textContent = this.formatTime(elapsedSeconds);
+        }
+
+        // Get data for this position
+        const dataPoint = await this.getDataAtPosition(position);
+
+        if (dataPoint) {
+            if (lapInfoSpan) {
+                lapInfoSpan.textContent = `Lap: ${dataPoint.lap}`;
+            }
+
+            this.updateTelemetryDisplay(dataPoint);
+            this.updateLapDataDisplay(dataPoint);
+            this.plotCarOnMap(dataPoint.latitude, dataPoint.longitude);
+
+        } else {
+            console.warn(`No data available at position ${position}`);
+        }
+    }
+
+    // === Playback Controls ===
 
     togglePlayPause() {
         if (this.isPlaying) {
@@ -516,28 +558,21 @@ class TrackMapViewer {
         this.isPlaying = true;
         this.updatePlayPauseButton();
 
-        // Calculate playback interval based on race data timing
-        // Average time between data points in the race data
-        const avgTimeInterval = this.calculateAverageTimeInterval();
-        const playbackInterval = Math.max(50, avgTimeInterval * this.playbackSpeed); // Minimum 50ms for smooth animation
-
-        console.log(`Starting playback with interval: ${playbackInterval}ms`);
+        const playbackInterval = 100; // 100ms = smooth playback
 
         this.playbackInterval = setInterval(() => {
             const timeSlider = document.getElementById('time-slider');
             if (!timeSlider) return;
 
-            const currentIndex = parseInt(timeSlider.value);
-            const nextIndex = currentIndex + 1;
+            const nextPosition = this.currentPosition + 1;
 
-            if (nextIndex >= this.timelineData.length) {
-                // End of race data reached
+            if (nextPosition >= this.timelineData.length) {
                 this.pausePlayback();
                 return;
             }
 
-            timeSlider.value = nextIndex;
-            this.updateCarPosition(nextIndex);
+            timeSlider.value = nextPosition;
+            this.updateCarPosition(nextPosition);
         }, playbackInterval);
     }
 
@@ -566,436 +601,46 @@ class TrackMapViewer {
         }
     }
 
-    calculateAverageTimeInterval() {
-        if (this.timelineData.length < 2) return 100; // Default fallback
+    jumpTime(seconds) {
+        if (!this.timelineData.length) return;
 
-        let totalInterval = 0;
-        let intervalCount = 0;
+        const currentTime = new Date(this.timelineData[this.currentPosition].timestamp);
+        const targetTime = new Date(currentTime.getTime() + seconds * 1000);
 
-        for (let i = 1; i < Math.min(100, this.timelineData.length); i++) { // Sample first 100 points
-            const prevTime = new Date(this.timelineData[i - 1].timestamp);
-            const currTime = new Date(this.timelineData[i].timestamp);
-            const interval = currTime - prevTime;
+        // Find closest position
+        let closestPosition = this.currentPosition;
+        let minDiff = Math.abs(new Date(this.timelineData[this.currentPosition].timestamp) - targetTime);
 
-            if (interval > 0 && interval < 5000) { // Ignore invalid intervals
-                totalInterval += interval;
-                intervalCount++;
+        for (let i = 0; i < this.timelineData.length; i++) {
+            const diff = Math.abs(new Date(this.timelineData[i].timestamp) - targetTime);
+            if (diff < minDiff) {
+                minDiff = diff;
+                closestPosition = i;
             }
         }
 
-        const avgInterval = intervalCount > 0 ? totalInterval / intervalCount : 100;
-        console.log(`Average time interval between data points: ${avgInterval}ms`);
-        return avgInterval;
-    }
-
-    async loadTelemetryData() {
-        try {
-            console.log(`Loading telemetry data for ${this.selectedRace}`);
-
-            // Load available car files for the selected race
-            await this.loadAvailableCarFiles();
-
-        } catch (error) {
-            console.error('Failed to load telemetry data:', error);
+        const timeSlider = document.getElementById('time-slider');
+        if (timeSlider) {
+            timeSlider.value = closestPosition;
+            this.updateCarPosition(closestPosition);
         }
     }
 
-    async loadAvailableCarFiles() {
-        try {
-            // Known car IDs (same for both races, but availability may differ)
-            const knownCarIds = [
-                'GR86-002-000', 'GR86-004-78', 'GR86-006-7', 'GR86-010-16',
-                'GR86-013-80', 'GR86-015-31', 'GR86-016-55', 'GR86-022-13',
-                'GR86-025-47', 'GR86-026-72', 'GR86-030-18', 'GR86-033-46',
-                'GR86-036-98', 'GR86-038-93', 'GR86-040-3', 'GR86-047-21',
-                'GR86-049-88', 'GR86-060-2', 'GR86-063-113', 'GR86-065-5'
-            ];
+    jumpToLap(lapNumber) {
+        if (!this.timelineData.length) return;
 
-            // Determine race prefix and track
-            const racePrefix = this.selectedRace === 'race1' ? 'R1' : 'R2';
-            const trackName = 'barber'; // Currently hardcoded to Barber, expandable later
+        // Find first data point of the specified lap
+        const lapStartIndex = this.timelineData.findIndex(point => point.lap === lapNumber);
 
-            // Verify which car files actually exist for this race
-            this.availableCars = [];
-            for (const carId of knownCarIds) {
-                try {
-                    const filePath = `car_data/${trackName}/${racePrefix}_${carId}_gps.csv`;
-                    const response = await fetch(filePath, { method: 'HEAD' });
-                    if (response.ok) {
-                        this.availableCars.push(carId);
-                    }
-                } catch (e) {
-                    // File doesn't exist for this race, skip
-                    console.log(`Car file not found for ${racePrefix}: ${carId}`);
-                }
+        if (lapStartIndex !== -1) {
+            const timeSlider = document.getElementById('time-slider');
+            if (timeSlider) {
+                timeSlider.value = lapStartIndex;
+                this.updateCarPosition(lapStartIndex);
             }
-
-            console.log(`Found ${this.availableCars.length} available cars for ${racePrefix}`);
-            this.populateCarDropdown();
-
-        } catch (error) {
-            console.error('Failed to load available car files:', error);
-        }
-    }
-
-    async loadSpecificCarData(carId) {
-        try {
-            const racePrefix = this.selectedRace === 'race1' ? 'R1' : 'R2';
-            const trackName = 'barber';
-
-            // Try 50% sampling files first (improved speed accuracy), then fallback options
-            let fileName = `car_data/${trackName}/${racePrefix}_${carId}_telemetry_50percent.csv`;
-            let response = await fetch(fileName);
-
-            if (!response.ok) {
-                // Try 50% sampling test file (for GR86-002-000)
-                fileName = `car_data/${trackName}/TEST_${racePrefix}_${carId}_50percent_sampling.csv`;
-                response = await fetch(fileName);
-            }
-
-            if (!response.ok) {
-                // Try fixed telemetry file (20% sampling with interpolation)
-                fileName = `car_data/${trackName}/${racePrefix}_${carId}_telemetry_fixed.csv`;
-                response = await fetch(fileName);
-            }
-
-            if (!response.ok) {
-                // Fallback to original enhanced telemetry file
-                console.log(`Fixed telemetry not found, trying enhanced telemetry file for ${carId}`);
-                fileName = `car_data/${trackName}/${racePrefix}_${carId}_telemetry.csv`;
-                response = await fetch(fileName);
-
-                if (!response.ok) {
-                    // Fallback to GPS-only file
-                    console.log(`Enhanced telemetry not found, using GPS-only file for ${carId}`);
-                    fileName = `car_data/${trackName}/${racePrefix}_${carId}_gps.csv`;
-                    response = await fetch(fileName);
-
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    }
-                }
-            }
-
-            const csvText = await response.text();
-
-            console.log(`Loading data for ${racePrefix} car: ${carId} from ${fileName}`);
-
-            // Detect file type and parse accordingly
-            if (fileName.includes('_telemetry_50percent.csv') || fileName.includes('_50percent_sampling.csv') ||
-                fileName.includes('_telemetry_fixed_v2.csv') || fileName.includes('_telemetry_fixed.csv') ||
-                fileName.includes('_telemetry.csv')) {
-                console.log('Using enhanced telemetry parsing');
-                this.parseFullTelemetryData(csvText);
-            } else {
-                console.log('Using GPS-only parsing');
-                this.parseTelemetryData(csvText);
-            }
-
-        } catch (error) {
-            console.error(`Failed to load data for car ${carId}:`, error);
-            throw error;
-        }
-    }
-
-    parseTelemetryData(csvText) {
-        const lines = csvText.trim().split('\n');
-        const headers = lines[0].split(',');
-
-        console.log('Full data file - Total lines:', lines.length);
-        console.log('First line (headers):', lines[0]);
-        console.log('Headers array:', headers);
-
-        // Find relevant column indices
-        const vehicleIdIndex = headers.indexOf('vehicle_id');
-        const telemetryNameIndex = headers.indexOf('telemetry_name');
-        const telemetryValueIndex = headers.indexOf('telemetry_value');
-        const timestampIndex = headers.indexOf('timestamp');
-        const lapIndex = headers.indexOf('lap');
-
-        console.log('Column indices:');
-        console.log('vehicleIdIndex:', vehicleIdIndex);
-        console.log('telemetryNameIndex:', telemetryNameIndex);
-        console.log('telemetryValueIndex:', telemetryValueIndex);
-        console.log('timestampIndex:', timestampIndex);
-        console.log('lapIndex:', lapIndex);
-
-        console.log(`Processing GPS data for ${this.selectedCar}...`);
-
-        // Process GPS data for the currently selected car
-        const targetCar = this.selectedCar;
-        const latitudeData = [];
-        const longitudeData = [];
-        let processedLines = 0;
-
-        // Collect all latitude and longitude data separately
-        for (let i = 1; i < lines.length; i++) {
-            const values = lines[i].split(',');
-            const vehicleId = values[vehicleIdIndex];
-            const telemetryName = values[telemetryNameIndex];
-
-            processedLines++;
-
-            // Debug first few lines
-            if (processedLines <= 10) {
-                console.log(`Line ${i}: vehicleId="${vehicleId}", telemetryName="${telemetryName}"`);
-            }
-
-            // Collect GPS data for the selected car
-            if (vehicleId === targetCar) {
-                const telemetryValue = parseFloat(values[telemetryValueIndex]);
-                const timestamp = values[timestampIndex];
-                const lap = parseInt(values[lapIndex]) || 1;
-
-                if (telemetryName === 'VBOX_Lat_Min') {
-                    latitudeData.push({
-                        timestamp: timestamp,
-                        latitude: telemetryValue,
-                        lap: lap
-                    });
-                } else if (telemetryName === 'VBOX_Long_Minutes') {
-                    longitudeData.push({
-                        timestamp: timestamp,
-                        longitude: telemetryValue,
-                        lap: lap
-                    });
-                }
-            }
-        }
-
-        console.log(`Found ${latitudeData.length} latitude entries and ${longitudeData.length} longitude entries`);
-
-        // Pair latitude and longitude data by index (assuming they're in similar order)
-        const gpsDataPoints = [];
-        const pairCount = Math.min(latitudeData.length, longitudeData.length);
-
-        for (let i = 0; i < pairCount; i += 1) { // Use all pairs for crew chief analysis
-            const latEntry = latitudeData[i];
-            const lonEntry = longitudeData[i];
-
-            gpsDataPoints.push({
-                timestamp: latEntry.timestamp,
-                latitude: latEntry.latitude,
-                longitude: lonEntry.longitude,
-                lap: latEntry.lap
-            });
-        }
-
-        console.log(`Processed ${processedLines} lines, created ${gpsDataPoints.length} GPS coordinate pairs`);
-
-        // Create single car data structure
-        const carData = {
-            [targetCar]: {
-                vehicleId: targetCar,
-                dataPoints: gpsDataPoints.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-            }
-        };
-
-        this.telemetryData = Object.values(carData);
-        this.availableCars = this.telemetryData.map(car => car.vehicleId);
-
-        console.log('Parsed telemetry data for', this.availableCars.length, 'cars');
-    }
-
-    parseFullTelemetryData(csvText) {
-        const lines = csvText.trim().split('\n');
-        const headers = lines[0].split(',');
-
-        console.log('Enhanced telemetry file - Total lines:', lines.length);
-        console.log('Headers:', headers);
-
-        // Find relevant column indices
-        const vehicleIdIndex = headers.indexOf('vehicle_id');
-        const telemetryNameIndex = headers.indexOf('telemetry_name');
-        const telemetryValueIndex = headers.indexOf('telemetry_value');
-        const timestampIndex = headers.indexOf('timestamp');
-        const lapIndex = headers.indexOf('lap');
-
-        const targetCar = this.selectedCar;
-        const telemetryTypes = ['VBOX_Lat_Min', 'VBOX_Long_Minutes', 'speed', 'gear', 'aps', 'pbrake_r', 'pbrake_f'];
-
-        console.log(`Processing enhanced telemetry for ${targetCar}...`);
-
-        // Group all telemetry by timestamp
-        const timestampData = {};
-        let processedLines = 0;
-
-        for (let i = 1; i < lines.length; i++) {
-            const values = lines[i].split(',');
-            const vehicleId = values[vehicleIdIndex];
-            const telemetryName = values[telemetryNameIndex];
-            const telemetryValue = parseFloat(values[telemetryValueIndex]);
-            const timestamp = values[timestampIndex];
-            const lap = parseInt(values[lapIndex]) || 1;
-
-            processedLines++;
-
-            // Debug first few lines
-            if (processedLines <= 5) {
-                console.log(`Line ${i}: ${vehicleId}, ${telemetryName}=${telemetryValue}, ${timestamp}`);
-            }
-
-            // Collect telemetry for the selected car
-            if (vehicleId === targetCar && telemetryTypes.includes(telemetryName)) {
-                if (!timestampData[timestamp]) {
-                    timestampData[timestamp] = {
-                        timestamp: timestamp,
-                        lap: lap,
-                        telemetry: {}
-                    };
-                }
-
-                // Store telemetry value (use null for NaN values)
-                timestampData[timestamp].telemetry[telemetryName] = isNaN(telemetryValue) ? null : telemetryValue;
-            }
-        }
-
-        console.log(`Found ${Object.keys(timestampData).length} timestamps with telemetry data`);
-
-        // Convert to sorted array and create complete data points
-        const sortedTimestamps = Object.keys(timestampData).sort((a, b) => new Date(a) - new Date(b));
-        const dataPoints = [];
-
-        for (const timestamp of sortedTimestamps) {
-            const data = timestampData[timestamp];
-            const telemetry = data.telemetry;
-
-            // Only include data points that have both GPS coordinates
-            if (telemetry['VBOX_Lat_Min'] !== undefined && telemetry['VBOX_Long_Minutes'] !== undefined &&
-                telemetry['VBOX_Lat_Min'] !== null && telemetry['VBOX_Long_Minutes'] !== null) {
-
-                dataPoints.push({
-                    timestamp: timestamp,
-                    latitude: telemetry['VBOX_Lat_Min'],
-                    longitude: telemetry['VBOX_Long_Minutes'],
-                    lap: data.lap,
-                    // Enhanced telemetry fields
-                    speed: telemetry['speed'] || null,
-                    gear: telemetry['gear'] || null,
-                    throttle: telemetry['aps'] || null,
-                    brakeRear: telemetry['pbrake_r'] || null,
-                    brakeFront: telemetry['pbrake_f'] || null
-                });
-            }
-        }
-
-        console.log(`Created ${dataPoints.length} complete telemetry data points`);
-
-        // Log telemetry availability
-        if (dataPoints.length > 0) {
-            const samplePoint = dataPoints[Math.floor(dataPoints.length / 2)];
-            console.log('Sample telemetry point:', {
-                timestamp: samplePoint.timestamp,
-                speed: samplePoint.speed,
-                gear: samplePoint.gear,
-                throttle: samplePoint.throttle,
-                brakeRear: samplePoint.brakeRear,
-                brakeFront: samplePoint.brakeFront
-            });
-        }
-
-        // Create car data structure
-        const carData = {
-            [targetCar]: {
-                vehicleId: targetCar,
-                dataPoints: dataPoints,
-                hasEnhancedTelemetry: true  // Flag to indicate enhanced data
-            }
-        };
-
-        this.telemetryData = Object.values(carData);
-        this.availableCars = this.telemetryData.map(car => car.vehicleId);
-
-        console.log('Parsed enhanced telemetry data for', this.availableCars.length, 'cars');
-    }
-
-    populateCarDropdown() {
-        const carDropdown = document.getElementById('car-dropdown');
-        if (!carDropdown) return;
-
-        if (this.availableCars.length === 0) {
-            carDropdown.innerHTML = '<option value="">No cars available for this race</option>';
-            return;
-        }
-
-        carDropdown.innerHTML = '<option value="">Select a car...</option>';
-
-        // Sort cars by number for better UX (using middle digits - the car number on the side)
-        const sortedCars = [...this.availableCars].sort((a, b) => {
-            const numA = parseInt(a.split('-')[1]) || 0;
-            const numB = parseInt(b.split('-')[1]) || 0;
-            return numA - numB;
-        });
-
-        sortedCars.forEach(carId => {
-            const option = document.createElement('option');
-            option.value = carId;
-
-            // Extract car number (middle digits) - the number on the side of the car
-            const carNumber = carId.split('-')[1] || carId;
-            option.textContent = `Car #${carNumber} ${carId}`;
-            carDropdown.appendChild(option);
-        });
-
-        console.log(`Populated dropdown with ${this.availableCars.length} cars for ${this.selectedRace}`);
-
-        // Focus on car dropdown to guide user to first required action
-        if (this.availableCars.length > 0) {
-            setTimeout(() => {
-                carDropdown.focus();
-            }, 100); // Small delay to ensure DOM is fully updated
-        }
-    }
-
-    async onCarSelectionChange() {
-        if (this.selectedCar) {
-            console.log('Car selected:', this.selectedCar);
-
-            // Pause any ongoing playback
-            this.pausePlayback();
-
-            // Clear existing data
-            this.timelineData = [];
-            this.telemetryData = [];
-
-            // Show loading indicator
-            this.showLoadingMessage(`Loading GPS data for ${this.selectedCar}...`);
-
-            try {
-                // Load specific car data
-                await this.loadSpecificCarData(this.selectedCar);
-
-                this.prepareTimelineData();
-                this.updateTimeline();
-                this.hideLoadingMessage();
-
-            } catch (error) {
-                this.showError(`Failed to load data for ${this.selectedCar}`);
-                this.hideLoadingMessage();
-            }
-        }
-    }
-
-    prepareTimelineData() {
-        const carData = this.telemetryData.find(car => car.vehicleId === this.selectedCar);
-        if (carData) {
-            this.timelineData = carData.dataPoints.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-            console.log('Timeline data prepared with', this.timelineData.length, 'data points');
-
-            // Log GPS coordinate ranges for debugging
-            if (this.timelineData.length > 0) {
-                const latitudes = this.timelineData.map(p => p.latitude);
-                const longitudes = this.timelineData.map(p => p.longitude);
-                console.log(`GPS Range - Lat: ${Math.min(...latitudes).toFixed(6)} to ${Math.max(...latitudes).toFixed(6)}`);
-                console.log(`GPS Range - Lon: ${Math.min(...longitudes).toFixed(6)} to ${Math.max(...longitudes).toFixed(6)}`);
-                console.log(`Laps covered: ${Math.min(...this.timelineData.map(p => p.lap))} to ${Math.max(...this.timelineData.map(p => p.lap))}`);
-            }
-
-            // Show all GPS points for debugging
-            this.showGPSTrace();
-
-            // Populate lap dropdown
-            this.populateLapDropdown();
+            console.log(`Jumped to lap ${lapNumber} at index ${lapStartIndex}`);
+        } else {
+            console.warn(`Lap ${lapNumber} not found in timeline data`);
         }
     }
 
@@ -1003,169 +648,168 @@ class TrackMapViewer {
         const lapDropdown = document.getElementById('lap-dropdown');
         if (!lapDropdown || !this.timelineData.length) return;
 
+        // Clear existing options except the first "Select Lap" option
+        while (lapDropdown.children.length > 1) {
+            lapDropdown.removeChild(lapDropdown.lastChild);
+        }
+
         // Extract unique lap numbers from timeline data
         const uniqueLaps = [...new Set(this.timelineData.map(point => point.lap))].sort((a, b) => a - b);
 
-        // Clear existing options except the default
-        lapDropdown.innerHTML = '<option value="">Select Lap</option>';
-
-        // Add options for each lap
-        uniqueLaps.forEach(lapNumber => {
+        // Add lap options
+        uniqueLaps.forEach(lap => {
             const option = document.createElement('option');
-            option.value = lapNumber;
-            option.textContent = `Lap ${lapNumber}`;
+            option.value = lap;
+            option.textContent = `Lap ${lap}`;
             lapDropdown.appendChild(option);
         });
 
         console.log(`Populated lap dropdown with ${uniqueLaps.length} laps: ${uniqueLaps.join(', ')}`);
     }
 
-    showGPSTrace() {
-        // Remove existing trace
-        this.g.selectAll('.gps-trace').remove();
+    calculateBestLap() {
+        // Use the pre-calculated best lap info from the API
+        if (!this.bestLapInfo || !this.bestLapInfo.bestLap) {
+            return { bestLap: null, bestTime: null, bestDuration: null };
+        }
 
-        if (this.timelineData.length === 0) return;
+        return {
+            bestLap: this.bestLapInfo.bestLap,
+            bestTime: this.bestLapInfo.bestLapTime,
+            bestDuration: this.bestLapInfo.bestLapTimeMs
+        };
+    }
 
-        console.log('Showing sampled GPS trace for complete race...');
+    calculateTimeDelta(currentLapNumber, bestDuration) {
+        if (!bestDuration || !this.lapData[currentLapNumber]) {
+            return null;
+        }
 
-        // Show every point (already sampled during parsing)
-        for (let i = 0; i < this.timelineData.length; i += 1) {
-            const point = this.timelineData[i];
-            const coords = this.convertGPSToMap(point.latitude, point.longitude);
+        const currentLapInfo = this.lapData[currentLapNumber];
+        const currentDuration = currentLapInfo.lap_time_ms;
 
-            if (coords) {
-                this.g.append("circle")
-                    .attr("class", "gps-trace")
-                    .attr("cx", coords.x)
-                    .attr("cy", coords.y)
-                    .attr("r", 1)
-                    .attr("fill", "blue")
-                    .attr("opacity", 0.4);
+        if (!currentDuration || currentDuration <= 0) {
+            return null;
+        }
+
+        return currentDuration - bestDuration;
+    }
+
+    // === Visual Methods (mostly same as original) ===
+
+    loadTrackMap() {
+        const img = new Image();
+        const timestamp = new Date().getTime();
+        const imageUrl = `race_maps/barber motorsports park.png?t=${timestamp}`;
+
+        img.onload = () => {
+            this.imageWidth = img.width;
+            this.imageHeight = img.height;
+
+            this.g.append("image")
+                .attr("href", imageUrl)
+                .attr("width", this.imageWidth)
+                .attr("height", this.imageHeight)
+                .attr("x", 0)
+                .attr("y", 0);
+
+            this.fitToScreen();
+            this.drawStartFinishLine();
+
+            console.log(`✅ Track map loaded: ${this.imageWidth}x${this.imageHeight}`);
+        };
+
+        img.onerror = () => {
+            console.error("❌ Failed to load track map image");
+            this.showError("Failed to load track map. Please check if the image file exists.");
+        };
+
+        img.src = imageUrl;
+    }
+
+    drawStartFinishLine() {
+        const startFinishLat = 33.53260;
+        const startFinishLon = -86.61963;
+        const coords = this.convertGPSToMap(startFinishLat, startFinishLon);
+
+        if (coords) {
+            const startFinishGroup = this.g.append("g").attr("class", "start-finish-line");
+            const lineLength = 40;
+            const lineWidth = 6;
+
+            startFinishGroup.append("rect")
+                .attr("x", coords.x - lineLength/2)
+                .attr("y", coords.y - lineWidth/2)
+                .attr("width", lineLength)
+                .attr("height", lineWidth)
+                .attr("fill", "white")
+                .attr("stroke", "black")
+                .attr("stroke-width", 2);
+
+            startFinishGroup.attr("transform", `rotate(45, ${coords.x}, ${coords.y})`);
+
+            const squareSize = 4;
+            for (let i = 0; i < lineLength / squareSize; i++) {
+                if (i % 2 === 0) {
+                    startFinishGroup.append("rect")
+                        .attr("x", coords.x - lineLength/2 + i * squareSize)
+                        .attr("y", coords.y - lineWidth/2)
+                        .attr("width", squareSize)
+                        .attr("height", lineWidth)
+                        .attr("fill", "black");
+                }
             }
+
+            console.log(`✅ Start/finish line drawn at GPS: ${startFinishLat.toFixed(6)}, ${startFinishLon.toFixed(6)}`);
         }
     }
 
     convertGPSToMap(latitude, longitude) {
         const trackBounds = {
-            minLat: 33.5293,   // Actual GPS data minimum
-            maxLat: 33.5359,   // Actual GPS data maximum (corrected)
-            minLon: -86.6244,  // Actual GPS data minimum
-            maxLon: -86.6145   // Actual GPS data maximum (corrected)
+            minLat: 33.5293,
+            maxLat: 33.5359,
+            minLon: -86.6244,
+            maxLon: -86.6145
         };
 
         const normalizedX = (longitude - trackBounds.minLon) / (trackBounds.maxLon - trackBounds.minLon);
         const normalizedY = (latitude - trackBounds.minLat) / (trackBounds.maxLat - trackBounds.minLat);
 
-        // Improved calibration based on GPS trace analysis
-        // The trace was shifted right, so we shift left with negative X offset
-        // Also adjust scaling to better fit the track boundaries
-
-        // Apply rotation if needed - Iteration 5: Minimal rotation
-        const rotationAngle = 0.05; // Much smaller rotation
+        const rotationAngle = 0.05;
         const cosAngle = Math.cos(rotationAngle);
         const sinAngle = Math.sin(rotationAngle);
 
-        // Center coordinates around 0.5 for rotation
         const centeredX = normalizedX - 0.5;
         const centeredY = normalizedY - 0.5;
 
-        // Apply rotation
         const rotatedX = centeredX * cosAngle - centeredY * sinAngle;
         const rotatedY = centeredX * sinAngle + centeredY * cosAngle;
 
-        // Move back and apply calibration - Iteration 8: Fine-tune scale for better track fit
-        const calibratedX = (rotatedX + 0.5) * 0.92 + 0.04; // Increase scale to 0.92 for better fill
-        const calibratedY = (rotatedY + 0.5) * 0.92 + 0.04; // Match scale, center adjustment
+        const calibratedX = (rotatedX + 0.5) * 0.92 + 0.04;
+        const calibratedY = (rotatedY + 0.5) * 0.92 + 0.04;
 
-        const mapX = calibratedX * this.imageWidth; // Clean positioning
-        const mapY = (1 - calibratedY) * this.imageHeight; // Clean positioning
+        const mapX = calibratedX * this.imageWidth;
+        const mapY = (1 - calibratedY) * this.imageHeight;
 
-        // Expand bounds significantly to capture all possible GPS points
         if (mapX >= -200 && mapX <= this.imageWidth + 200 && mapY >= -200 && mapY <= this.imageHeight + 200) {
             return { x: mapX, y: mapY };
         }
 
-        // Log filtered out points for debugging
-        console.log(`GPS point filtered out: GPS(${latitude.toFixed(6)}, ${longitude.toFixed(6)}) -> Map(${mapX.toFixed(1)}, ${mapY.toFixed(1)})`);
         return null;
     }
 
-    updateTimeline() {
-        const timeSlider = document.getElementById('time-slider');
-        const totalTimeSpan = document.getElementById('total-time');
-
-        if (timeSlider && this.timelineData.length > 0) {
-            timeSlider.max = this.timelineData.length - 1;
-            timeSlider.value = 0;
-
-            // Calculate total race time
-            const startTime = new Date(this.timelineData[0].timestamp);
-            const endTime = new Date(this.timelineData[this.timelineData.length - 1].timestamp);
-            const totalSeconds = (endTime - startTime) / 1000;
-
-            if (totalTimeSpan) {
-                totalTimeSpan.textContent = this.formatTime(totalSeconds);
-            }
-
-            // Initialize with first position
-            this.updateCarPosition(0);
-        }
-    }
-
-    updateCarPosition(timeIndex) {
-        console.log(`Updating car position for time index: ${timeIndex}`);
-
-        if (timeIndex >= 0 && timeIndex < this.timelineData.length) {
-            const dataPoint = this.timelineData[timeIndex];
-            console.log(`Data point:`, dataPoint);
-
-            // Update time display
-            const currentTimeSpan = document.getElementById('current-time');
-            const lapInfoSpan = document.getElementById('lap-info');
-
-            if (currentTimeSpan && this.timelineData.length > 0) {
-                const startTime = new Date(this.timelineData[0].timestamp);
-                const currentTime = new Date(dataPoint.timestamp);
-                const elapsedSeconds = (currentTime - startTime) / 1000;
-                currentTimeSpan.textContent = this.formatTime(elapsedSeconds);
-            }
-
-            if (lapInfoSpan) {
-                lapInfoSpan.textContent = `Lap: ${dataPoint.lap}`;
-            }
-
-            // Update enhanced telemetry display
-            this.updateTelemetryDisplay(dataPoint);
-
-            // Update lap data display
-            this.updateLapDataDisplay(dataPoint);
-
-            // Plot car position on map
-            this.plotCarOnMap(dataPoint.latitude, dataPoint.longitude);
-        } else {
-            console.log(`Invalid time index: ${timeIndex}, timeline length: ${this.timelineData.length}`);
-        }
-    }
-
     plotCarOnMap(latitude, longitude) {
-        // Remove existing car marker more reliably
         if (this.carMarker) {
             try {
                 this.carMarker.remove();
-            } catch (e) {
-                // Marker might already be removed
-            }
+            } catch (e) {}
             this.carMarker = null;
         }
 
-        // Also remove any existing car markers by class
         this.g.selectAll('.car-marker').remove();
-
-        // Use shared coordinate conversion
         const coords = this.convertGPSToMap(latitude, longitude);
 
         if (coords) {
-            // Create car marker with class for easy removal
             this.carMarker = this.g.append("circle")
                 .attr("class", "car-marker")
                 .attr("cx", coords.x)
@@ -1175,236 +819,575 @@ class TrackMapViewer {
                 .attr("stroke", "#ffffff")
                 .attr("stroke-width", 3)
                 .style("cursor", "pointer");
-
-            console.log(`Car plotted at GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} -> Map: ${coords.x.toFixed(1)}, ${coords.y.toFixed(1)}`);
-        } else {
-            console.log(`GPS coordinates out of bounds: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
         }
     }
 
-    formatTime(seconds) {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const secs = Math.floor(seconds % 60);
-
-        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-
     updateTelemetryDisplay(dataPoint) {
-        // Update telemetry display in sidebar
         const speedValue = document.getElementById('speed-value');
         const gearValue = document.getElementById('gear-value');
         const throttleValue = document.getElementById('throttle-value');
         const brakeRearValue = document.getElementById('brake-rear-value');
         const brakeFrontValue = document.getElementById('brake-front-value');
+        const engineRpmValue = document.getElementById('engine-rpm-value');
+        const steeringAngleValue = document.getElementById('steering-angle-value');
+        const gForceXValue = document.getElementById('g-force-x-value');
+        const gForceYValue = document.getElementById('g-force-y-value');
+        const lapDistanceValue = document.getElementById('lap-distance-value');
 
-        // Update speed with unit conversion
+        // Update last known values when data is available
+        if (dataPoint.speed !== null && dataPoint.speed !== undefined) {
+            this.lastKnownTelemetry.speed = dataPoint.speed;
+        }
+        if (dataPoint.gear !== null && dataPoint.gear !== undefined) {
+            this.lastKnownTelemetry.gear = dataPoint.gear;
+        }
+        if (dataPoint.throttle !== null && dataPoint.throttle !== undefined) {
+            this.lastKnownTelemetry.throttle = dataPoint.throttle;
+        }
+        if (dataPoint.brake_rear !== null && dataPoint.brake_rear !== undefined) {
+            this.lastKnownTelemetry.brake_rear = dataPoint.brake_rear;
+        }
+        if (dataPoint.brake_front !== null && dataPoint.brake_front !== undefined) {
+            this.lastKnownTelemetry.brake_front = dataPoint.brake_front;
+        }
+        if (dataPoint.engine_rpm !== null && dataPoint.engine_rpm !== undefined) {
+            this.lastKnownTelemetry.engine_rpm = dataPoint.engine_rpm;
+        }
+        if (dataPoint.steering_angle !== null && dataPoint.steering_angle !== undefined) {
+            this.lastKnownTelemetry.steering_angle = dataPoint.steering_angle;
+        }
+        if (dataPoint.g_force_x !== null && dataPoint.g_force_x !== undefined) {
+            this.lastKnownTelemetry.g_force_x = dataPoint.g_force_x;
+        }
+        if (dataPoint.g_force_y !== null && dataPoint.g_force_y !== undefined) {
+            this.lastKnownTelemetry.g_force_y = dataPoint.g_force_y;
+        }
+        if (dataPoint.lap_distance !== null && dataPoint.lap_distance !== undefined) {
+            this.lastKnownTelemetry.lap_distance = dataPoint.lap_distance;
+        }
+
+        // Display speed - use current data or fallback to last known value
         if (speedValue) {
-            if (dataPoint.speed !== null && dataPoint.speed !== undefined) {
+            const speedToShow = dataPoint.speed !== null && dataPoint.speed !== undefined
+                ? dataPoint.speed
+                : this.lastKnownTelemetry.speed;
+
+            if (speedToShow !== null) {
                 const speed = this.speedUnit === 'kph'
-                    ? (dataPoint.speed * 1.60934) // Convert mph to kph
-                    : dataPoint.speed; // Keep as mph
+                    ? (speedToShow * 1.60934)
+                    : speedToShow;
                 speedValue.textContent = `${speed.toFixed(1)} ${this.speedUnit}`;
             } else {
                 speedValue.textContent = '--';
             }
         }
 
-        // Update gear
+        // Display gear - use current data or fallback to last known value
         if (gearValue) {
-            gearValue.textContent = dataPoint.gear !== null && dataPoint.gear !== undefined
-                ? Math.round(dataPoint.gear).toString()
+            const gearToShow = dataPoint.gear !== null && dataPoint.gear !== undefined
+                ? dataPoint.gear
+                : this.lastKnownTelemetry.gear;
+
+            gearValue.textContent = gearToShow !== null
+                ? Math.round(gearToShow).toString()
                 : '--';
         }
 
-        // Update throttle (APS)
+        // Display throttle - use current data or fallback to last known value
         if (throttleValue) {
-            throttleValue.textContent = dataPoint.throttle !== null && dataPoint.throttle !== undefined
-                ? `${dataPoint.throttle.toFixed(1)}%`
+            const throttleToShow = dataPoint.throttle !== null && dataPoint.throttle !== undefined
+                ? dataPoint.throttle
+                : this.lastKnownTelemetry.throttle;
+
+            throttleValue.textContent = throttleToShow !== null
+                ? `${throttleToShow.toFixed(1)}%`
                 : '--';
         }
 
-        // Update rear brake pressure
+        // Display rear brake - use current data or fallback to last known value
         if (brakeRearValue) {
-            brakeRearValue.textContent = dataPoint.brakeRear !== null && dataPoint.brakeRear !== undefined
-                ? `${dataPoint.brakeRear.toFixed(1)} psi`
+            const brakeRearToShow = dataPoint.brake_rear !== null && dataPoint.brake_rear !== undefined
+                ? dataPoint.brake_rear
+                : this.lastKnownTelemetry.brake_rear;
+
+            brakeRearValue.textContent = brakeRearToShow !== null
+                ? `${brakeRearToShow.toFixed(1)} psi`
                 : '--';
         }
 
-        // Update front brake pressure
+        // Display front brake - use current data or fallback to last known value
         if (brakeFrontValue) {
-            brakeFrontValue.textContent = dataPoint.brakeFront !== null && dataPoint.brakeFront !== undefined
-                ? `${dataPoint.brakeFront.toFixed(1)} psi`
+            const brakeFrontToShow = dataPoint.brake_front !== null && dataPoint.brake_front !== undefined
+                ? dataPoint.brake_front
+                : this.lastKnownTelemetry.brake_front;
+
+            brakeFrontValue.textContent = brakeFrontToShow !== null
+                ? `${brakeFrontToShow.toFixed(1)} psi`
                 : '--';
+        }
+
+        // Display engine RPM - use current data or fallback to last known value
+        if (engineRpmValue) {
+            const engineRpmToShow = dataPoint.engine_rpm !== null && dataPoint.engine_rpm !== undefined
+                ? dataPoint.engine_rpm
+                : this.lastKnownTelemetry.engine_rpm;
+
+            engineRpmValue.textContent = engineRpmToShow !== null
+                ? `${Math.round(engineRpmToShow)} rpm`
+                : '--';
+        }
+
+        // Display steering angle - use current data or fallback to last known value
+        if (steeringAngleValue) {
+            const steeringAngleToShow = dataPoint.steering_angle !== null && dataPoint.steering_angle !== undefined
+                ? dataPoint.steering_angle
+                : this.lastKnownTelemetry.steering_angle;
+
+            steeringAngleValue.textContent = steeringAngleToShow !== null
+                ? `${steeringAngleToShow.toFixed(1)}°`
+                : '--';
+        }
+
+        // Display longitudinal G-force - use current data or fallback to last known value
+        if (gForceXValue) {
+            const gForceXToShow = dataPoint.g_force_x !== null && dataPoint.g_force_x !== undefined
+                ? dataPoint.g_force_x
+                : this.lastKnownTelemetry.g_force_x;
+
+            gForceXValue.textContent = gForceXToShow !== null
+                ? `${gForceXToShow.toFixed(2)}g`
+                : '--';
+        }
+
+        // Display lateral G-force - use current data or fallback to last known value
+        if (gForceYValue) {
+            const gForceYToShow = dataPoint.g_force_y !== null && dataPoint.g_force_y !== undefined
+                ? dataPoint.g_force_y
+                : this.lastKnownTelemetry.g_force_y;
+
+            gForceYValue.textContent = gForceYToShow !== null
+                ? `${gForceYToShow.toFixed(2)}g`
+                : '--';
+        }
+
+        // Display lap distance - use current data or fallback to last known value
+        if (lapDistanceValue) {
+            const lapDistanceToShow = dataPoint.lap_distance !== null && dataPoint.lap_distance !== undefined
+                ? dataPoint.lap_distance
+                : this.lastKnownTelemetry.lap_distance;
+
+            if (lapDistanceToShow !== null) {
+                // Convert units based on speed unit setting
+                if (this.speedUnit === 'mph') {
+                    // Convert meters to feet (1 meter = 3.28084 feet)
+                    const lapDistanceFeet = lapDistanceToShow * 3.28084;
+                    lapDistanceValue.textContent = `${lapDistanceFeet.toFixed(0)}ft`;
+                } else {
+                    // Show in meters
+                    lapDistanceValue.textContent = `${lapDistanceToShow.toFixed(0)}m`;
+                }
+            } else {
+                lapDistanceValue.textContent = '--';
+            }
         }
     }
 
     updateLapDataDisplay(dataPoint) {
         if (!this.selectedCar || !dataPoint) return;
 
-        const race = this.selectedRace === 'race1' ? 'R1' : 'R2';
         const lapNumber = dataPoint.lap;
-
-        // Update lap number
         const lapNumberValue = document.getElementById('lap-number-value');
+        const lapTotalValue = document.getElementById('lap-total-time-value');
+        const bestLapValue = document.getElementById('best-lap-value');
+        const bestLapTimeValue = document.getElementById('best-lap-time-value');
+        const timeDeltaValue = document.getElementById('time-delta-value');
+
+        // Update current lap number
         if (lapNumberValue) {
             lapNumberValue.textContent = lapNumber;
         }
 
-        // Get lap data from loaded CSV data
-        const lapStartTime = this.getLapTimestamp(race, this.selectedCar, lapNumber, 'start');
-        const lapEndTime = this.getLapTimestamp(race, this.selectedCar, lapNumber, 'end');
+        // Calculate best lap information
+        const bestLapInfo = this.calculateBestLap();
 
-        // Update lap start time
-        const lapStartValue = document.getElementById('lap-start-time-value');
-        if (lapStartValue) {
-            if (lapStartTime) {
-                lapStartValue.textContent = this.formatLapTime(lapStartTime);
-            } else {
-                lapStartValue.textContent = '--:--:---';
-            }
-        }
-
-        // Update lap end time
-        const lapEndValue = document.getElementById('lap-end-time-value');
-        if (lapEndValue) {
-            if (lapEndTime) {
-                lapEndValue.textContent = this.formatLapTime(lapEndTime);
-            } else {
-                lapEndValue.textContent = '--:--:---';
-            }
-        }
-
-        // Calculate and update lap total time
-        const lapTotalValue = document.getElementById('lap-total-time-value');
+        // Update current lap time using accurate analysis data
+        const currentLapInfo = this.lapData[lapNumber];
         if (lapTotalValue) {
-            if (lapStartTime && lapEndTime) {
-                const startTime = new Date(lapStartTime);
-                const endTime = new Date(lapEndTime);
-                const lapDuration = endTime - startTime;
-
-                if (lapDuration > 0) {
-                    lapTotalValue.textContent = this.formatLapDuration(lapDuration);
-                } else {
-                    lapTotalValue.textContent = '--:--:---';
-                }
+            if (currentLapInfo && currentLapInfo.lap_time) {
+                lapTotalValue.textContent = currentLapInfo.lap_time;
             } else {
                 lapTotalValue.textContent = '--:--:---';
             }
         }
+
+        // Update best lap information using pre-calculated data
+        if (bestLapValue && bestLapTimeValue) {
+            if (bestLapInfo.bestLap && bestLapInfo.bestTime) {
+                bestLapValue.textContent = bestLapInfo.bestLap;
+                bestLapTimeValue.textContent = bestLapInfo.bestTime;
+            } else {
+                bestLapValue.textContent = '--';
+                bestLapTimeValue.textContent = '--:--:---';
+            }
+        }
+
+        // Update time delta using accurate lap times
+        if (timeDeltaValue) {
+            const timeDelta = this.calculateTimeDelta(lapNumber, bestLapInfo.bestDuration);
+            if (timeDelta !== null) {
+                const deltaFormatted = this.formatLapDuration(Math.abs(timeDelta));
+                if (timeDelta === 0) {
+                    timeDeltaValue.textContent = '🏆 Best!';
+                    timeDeltaValue.style.color = '#28a745'; // Green for best lap
+                } else if (timeDelta > 0) {
+                    timeDeltaValue.textContent = `+${deltaFormatted}`;
+                    timeDeltaValue.style.color = '#dc3545'; // Red for slower
+                } else {
+                    // This shouldn't happen if best lap calculation is correct, but just in case
+                    timeDeltaValue.textContent = `-${deltaFormatted}`;
+                    timeDeltaValue.style.color = '#28a745'; // Green for faster
+                }
+            } else {
+                timeDeltaValue.textContent = '--:--:---';
+                timeDeltaValue.style.color = '#007bff'; // Default blue
+            }
+        }
     }
 
-    getLapTimestamp(race, vehicleId, lap, type) {
-        let dataSource;
-        if (type === 'start') {
-            dataSource = this.lapData.lapStarts;
-        } else if (type === 'end') {
-            dataSource = this.lapData.lapEnds;
-        } else {
-            return null;
-        }
 
-        if (dataSource[race] && dataSource[race][vehicleId] && dataSource[race][vehicleId][lap]) {
-            return dataSource[race][vehicleId][lap];
-        }
+    // === Utility Methods (same as original) ===
 
-        return null;
+    formatTime(seconds) {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
 
     formatLapTime(timestamp) {
         if (!timestamp) return '--:--:---';
-
         const date = new Date(timestamp);
-        const hours = date.getUTCHours();
         const minutes = date.getUTCMinutes();
         const seconds = date.getUTCSeconds();
         const milliseconds = date.getUTCMilliseconds();
-
         return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${milliseconds.toString().padStart(3, '0')}`;
     }
 
     formatLapDuration(duration) {
         if (!duration || duration <= 0) return '--:--:---';
-
         const totalSeconds = Math.floor(duration / 1000);
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
         const milliseconds = duration % 1000;
-
         return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${milliseconds.toString().padStart(3, '0')}`;
     }
 
-    showLoadingMessage(message) {
-        // Remove existing messages
-        this.g.selectAll('.loading-message').remove();
+    updateTitle() {
+        if (!this.trackData) return;
 
-        // Add loading message
-        this.g.append("text")
-            .attr("class", "loading-message")
-            .attr("x", this.containerWidth / 2)
-            .attr("y", this.containerHeight / 2)
-            .attr("text-anchor", "middle")
-            .attr("fill", "#007bff")
-            .attr("font-size", "18px")
-            .attr("font-weight", "bold")
-            .text(message);
+        const eventNameElement = document.getElementById('event-name');
+        if (eventNameElement) {
+            eventNameElement.style.display = 'none';
+        }
+
+        const trackInfoElement = document.getElementById('track-info');
+        if (trackInfoElement) {
+            trackInfoElement.textContent =
+                `${this.trackData.track_name.toUpperCase()} | ${this.trackData.track_length.toUpperCase()}`;
+        }
+
+        this.updateRaceInTitle();
     }
 
-    hideLoadingMessage() {
-        this.g.selectAll('.loading-message').remove();
+    updateRaceInTitle() {
+        const eventDetailsElement = document.getElementById('event-details');
+        if (eventDetailsElement && this.trackData) {
+            const locationParts = this.trackData.location.split(' ');
+            const state = locationParts[locationParts.length - 1];
+            const city = locationParts.slice(0, -1).join(' ');
+            const raceNumber = this.selectedRace === 'R1' ? '1' : '2';
+            eventDetailsElement.textContent =
+                `${this.trackData.event_dates.toUpperCase()} | ${city.toUpperCase()}, ${state.toUpperCase()} | RACE ${raceNumber}`;
+        }
+    }
+
+    updateContainerSize() {
+        const newWidth = Math.min(window.innerWidth * 0.9, 1200);
+        const newHeight = Math.min(window.innerHeight * 0.765, 800);
+
+        if (newWidth !== this.containerWidth || newHeight !== this.containerHeight) {
+            this.containerWidth = newWidth;
+            this.containerHeight = newHeight;
+
+            this.svg
+                .attr("width", this.containerWidth)
+                .attr("height", this.containerHeight);
+
+            if (this.imageWidth > 0 && this.imageHeight > 0) {
+                this.fitToScreen();
+            }
+        }
+    }
+
+    fitToScreen() {
+        if (this.imageWidth === 0 || this.imageHeight === 0) return;
+
+        const padding = 20;
+        const scaleX = (this.containerWidth - padding * 2) / this.imageWidth;
+        const scaleY = (this.containerHeight - padding * 2) / this.imageHeight;
+        const scale = Math.min(scaleX, scaleY);
+
+        const x = (this.containerWidth - this.imageWidth * scale) / 2;
+        const y = (this.containerHeight - this.imageHeight * scale) / 2;
+
+        const transform = d3.zoomIdentity.translate(x, y).scale(scale);
+
+        this.svg.transition()
+            .duration(500)
+            .call(this.zoom.transform, transform);
+    }
+
+    async drawGPSTrace() {
+        if (!this.selectedCar || !this.timelineData.length) return;
+
+        console.log('🗺️ Drawing GPS trace for', this.selectedCar);
+
+        try {
+            // Clear any existing GPS trace
+            this.g.selectAll('.gps-trace').remove();
+
+            // Sample the timeline data to get manageable number of points (every 10th point)
+            const sampledTimeline = this.timelineData.filter((_, index) => index % 10 === 0);
+
+            // Load GPS data for trace in batches
+            const batchSize = 100; // Load 100 points at a time
+            const tracePoints = [];
+
+            for (let i = 0; i < sampledTimeline.length; i += batchSize) {
+                const batch = sampledTimeline.slice(i, i + batchSize);
+
+                // Load chunk for this batch
+                if (batch.length > 0) {
+                    const chunk = await this.loadDataChunk(
+                        this.timelineData.indexOf(batch[0]),
+                        this.timelineData.indexOf(batch[batch.length - 1])
+                    );
+
+                    if (chunk) {
+                        // Extract GPS coordinates from chunk
+                        chunk.forEach(point => {
+                            if (point.latitude && point.longitude) {
+                                const coords = this.convertGPSToMap(point.latitude, point.longitude);
+                                if (coords) {
+                                    tracePoints.push(coords);
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+
+            if (tracePoints.length < 2) {
+                console.warn('Not enough GPS points for trace');
+                return;
+            }
+
+            console.log(`✅ Drawing GPS trace with ${tracePoints.length} points`);
+
+            // Create line generator
+            const line = d3.line()
+                .x(d => d.x)
+                .y(d => d.y)
+                .curve(d3.curveCardinal);
+
+            // Draw the GPS trace
+            this.g.append("path")
+                .datum(tracePoints)
+                .attr("class", "gps-trace")
+                .attr("d", line)
+                .attr("fill", "none")
+                .attr("stroke", "#00ff00")
+                .attr("stroke-width", 3)
+                .attr("stroke-opacity", 0.7)
+                .style("pointer-events", "none");
+
+        } catch (error) {
+            console.error('❌ Error drawing GPS trace:', error);
+        }
+    }
+
+    clearVisuals() {
+        this.g.selectAll('.gps-trace').remove();
+        this.g.selectAll('.car-marker').remove();
+    }
+
+    clearLastKnownTelemetry() {
+        this.lastKnownTelemetry = {
+            speed: null,
+            gear: null,
+            throttle: null,
+            brake_rear: null,
+            brake_front: null,
+            engine_rpm: null,
+            steering_angle: null,
+            g_force_x: null,
+            g_force_y: null,
+            lap_distance: null
+        };
+    }
+
+    showStatusMessage(message, isError = false) {
+        this.g.selectAll('.status-message').remove();
+
+        // Position in lower left corner with padding
+        const padding = 20;
+        const x = padding;
+        const y = this.containerHeight - padding;
+
+        // Create background rectangle for better readability
+        const textElement = this.g.append("text")
+            .attr("class", "status-message")
+            .attr("x", x)
+            .attr("y", y)
+            .attr("text-anchor", "start")
+            .attr("fill", isError ? "red" : "#007bff")
+            .attr("font-size", "14px")
+            .attr("font-weight", "bold")
+            .text(message);
+
+        // Add semi-transparent background
+        const bbox = textElement.node().getBBox();
+        this.g.insert("rect", ".status-message")
+            .attr("class", "status-message-bg")
+            .attr("x", bbox.x - 8)
+            .attr("y", bbox.y - 4)
+            .attr("width", bbox.width + 16)
+            .attr("height", bbox.height + 8)
+            .attr("fill", "white")
+            .attr("fill-opacity", 0.9)
+            .attr("stroke", isError ? "red" : "#007bff")
+            .attr("stroke-width", 1)
+            .attr("rx", 4);
+    }
+
+    hideStatusMessage() {
+        this.g.selectAll('.status-message, .status-message-bg').remove();
     }
 
     showError(message) {
-        // Remove existing messages
-        this.g.selectAll('.loading-message, .error-message').remove();
+        this.showStatusMessage(message, true);
+    }
 
-        // Add error message
-        this.g.append("text")
-            .attr("class", "error-message")
-            .attr("x", this.containerWidth / 2)
-            .attr("y", this.containerHeight / 2)
-            .attr("text-anchor", "middle")
-            .attr("fill", "red")
-            .attr("font-size", "18px")
-            .text(message);
+    disableRaceTimeControls() {
+        const timeSlider = document.getElementById('time-slider');
+        const playPauseButton = document.getElementById('play-pause-button');
+        const stepBackButton = document.getElementById('step-back-5s');
+        const stepForwardButton = document.getElementById('step-forward-5s');
+        const lapDropdown = document.getElementById('lap-dropdown');
+
+        if (timeSlider) {
+            timeSlider.disabled = true;
+            timeSlider.style.opacity = '0.5';
+            timeSlider.style.cursor = 'not-allowed';
+        }
+
+        if (playPauseButton) {
+            playPauseButton.disabled = true;
+            playPauseButton.style.opacity = '0.5';
+            playPauseButton.style.cursor = 'not-allowed';
+        }
+
+        if (stepBackButton) {
+            stepBackButton.disabled = true;
+            stepBackButton.style.opacity = '0.5';
+            stepBackButton.style.cursor = 'not-allowed';
+        }
+
+        if (stepForwardButton) {
+            stepForwardButton.disabled = true;
+            stepForwardButton.style.opacity = '0.5';
+            stepForwardButton.style.cursor = 'not-allowed';
+        }
+
+        if (lapDropdown) {
+            lapDropdown.disabled = true;
+            lapDropdown.style.opacity = '0.5';
+            lapDropdown.style.cursor = 'not-allowed';
+        }
+    }
+
+    enableRaceTimeControls() {
+        const timeSlider = document.getElementById('time-slider');
+        const playPauseButton = document.getElementById('play-pause-button');
+        const stepBackButton = document.getElementById('step-back-5s');
+        const stepForwardButton = document.getElementById('step-forward-5s');
+        const lapDropdown = document.getElementById('lap-dropdown');
+
+        if (timeSlider) {
+            timeSlider.disabled = false;
+            timeSlider.style.opacity = '1';
+            timeSlider.style.cursor = 'pointer';
+        }
+
+        if (playPauseButton) {
+            playPauseButton.disabled = false;
+            playPauseButton.style.opacity = '1';
+            playPauseButton.style.cursor = 'pointer';
+        }
+
+        if (stepBackButton) {
+            stepBackButton.disabled = false;
+            stepBackButton.style.opacity = '1';
+            stepBackButton.style.cursor = 'pointer';
+        }
+
+        if (stepForwardButton) {
+            stepForwardButton.disabled = false;
+            stepForwardButton.style.opacity = '1';
+            stepForwardButton.style.cursor = 'pointer';
+        }
+
+        if (lapDropdown) {
+            lapDropdown.disabled = false;
+            lapDropdown.style.opacity = '1';
+            lapDropdown.style.cursor = 'pointer';
+        }
     }
 
     toggleSpeedUnit() {
-        // Toggle between mph and kph
         this.speedUnit = this.speedUnit === 'mph' ? 'kph' : 'mph';
 
-        // Update button text
         const toggleButton = document.getElementById('speed-unit-toggle');
         if (toggleButton) {
             toggleButton.textContent = this.speedUnit;
         }
 
-        // Update current speed display if we have data
         if (this.timelineData.length > 0) {
-            const timeSlider = document.getElementById('time-slider');
-            if (timeSlider) {
-                const currentIndex = parseInt(timeSlider.value);
-                if (currentIndex >= 0 && currentIndex < this.timelineData.length) {
-                    this.updateTelemetryDisplay(this.timelineData[currentIndex]);
-                }
-            }
+            this.updateCarPosition(this.currentPosition);
         }
     }
 }
 
-// Global variable to hold the track map viewer instance
-let trackMapViewer;
+// Global variables
+let apiTrackMapViewer;
 
-// Global function for speed unit toggle (called from HTML)
+// Global function for speed unit toggle
 function toggleSpeedUnit() {
-    if (trackMapViewer) {
-        trackMapViewer.toggleSpeedUnit();
+    if (apiTrackMapViewer) {
+        apiTrackMapViewer.toggleSpeedUnit();
     }
 }
 
-// Initialize the track map viewer when the page loads
+// Initialize when page loads
 document.addEventListener("DOMContentLoaded", () => {
-    console.log("Initializing Track Map Viewer...");
-    trackMapViewer = new TrackMapViewer();
-});
+    console.log("🚀 Initializing API-based Track Map Viewer...");
+    apiTrackMapViewer = new ApiTrackMapViewer();
 
+    // Workaround: Load cars after initialization completes
+    setTimeout(() => {
+        if (apiTrackMapViewer && apiTrackMapViewer.loadAvailableCars) {
+            console.log("🔧 Loading cars via workaround...");
+            apiTrackMapViewer.loadAvailableCars();
+        }
+    }, 1000);
+});

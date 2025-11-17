@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Race Track Map Viewer - API Version</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        /* Same styles as original index.html */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 5px;
+            background-color: #f0f0f0;
+        }
+
+        .container {
+            max-width: 95vw;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 10px;
+        }
+
+        .title-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 5px 0 10px 0;
+            gap: 20px;
+        }
+
+        .logo-container {
+            flex-shrink: 0;
+        }
+
+        .gr-cup-logo {
+            height: 80px;
+            width: auto;
+        }
+
+        .title-text {
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+        }
+
+        .event-name {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin: 0 0 5px 0;
+        }
+
+        .track-info {
+            font-size: 20px;
+            font-weight: bold;
+            color: #555;
+            margin: 0 0 3px 0;
+        }
+
+        .event-details {
+            font-size: 16px;
+            color: #666;
+            margin: 0;
+        }
+
+        .api-status {
+            background-color: #e8f5e8;
+            border: 2px solid #4caf50;
+            border-radius: 8px;
+            padding: 10px;
+            margin: 10px 0;
+            text-align: center;
+        }
+
+        .api-status.loading {
+            background-color: #fff3cd;
+            border-color: #ffc107;
+        }
+
+        .api-status.error {
+            background-color: #f8d7da;
+            border-color: #dc3545;
+        }
+
+        .api-indicator {
+            font-weight: bold;
+            color: #4caf50;
+        }
+
+        .api-indicator.loading {
+            color: #856404;
+        }
+
+        .api-indicator.error {
+            color: #721c24;
+        }
+
+        .track-viewer {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .main-content {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .left-controls {
+            width: 250px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .control-panel {
+            background-color: #f8f9fa;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .control-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+            text-align: center;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 5px;
+        }
+
+        .map-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+        }
+
+        .telemetry-sidebar {
+            width: 280px;
+            flex-shrink: 0;
+            background-color: #f8f9fa;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .telemetry-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+            text-align: center;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 8px;
+        }
+
+        .telemetry-card {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .telemetry-label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #666;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .unit-toggle {
+            background-color: #f8f9fa;
+            border: 1px solid #007bff;
+            border-radius: 4px;
+            color: #007bff;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .unit-toggle:hover {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .unit-toggle:active {
+            transform: scale(0.95);
+        }
+
+        .telemetry-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .telemetry-unit {
+            font-size: 14px;
+            color: #666;
+            margin-left: 5px;
+        }
+
+        .selector-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .selector-group label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            margin: 0;
+        }
+
+        .selector-group select {
+            padding: 8px 12px;
+            font-size: 14px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            background-color: white;
+            color: #333;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .selector-group select:hover {
+            border-color: #007bff;
+        }
+
+        .selector-group select:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
+
+        .timeline-controls {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .timeline-controls label {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        .time-slider {
+            width: 100%;
+            max-width: 600px;
+            height: 8px;
+            border-radius: 4px;
+            background: #ddd;
+            outline: none;
+            margin-bottom: 15px;
+        }
+
+        .time-slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+        }
+
+        .time-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            border: none;
+        }
+
+        .time-display {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .time-display span {
+            font-size: 14px;
+            color: #666;
+            font-weight: bold;
+        }
+
+        #lap-info {
+            color: #007bff;
+        }
+
+        .video-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .video-button {
+            padding: 10px 18px;
+            font-size: 16px;
+            font-weight: bold;
+            color: white;
+            background-color: #007bff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .video-button:hover {
+            background-color: #0056b3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,123,255,0.3);
+        }
+
+        .video-button:active {
+            background-color: #004494;
+            transform: translateY(0);
+        }
+
+        .play-button {
+            background-color: #28a745;
+            font-size: 18px;
+            min-width: 100px;
+        }
+
+        .play-button:hover {
+            background-color: #218838;
+        }
+
+        .pause-button {
+            background-color: #dc3545;
+        }
+
+        .pause-button:hover {
+            background-color: #c82333;
+        }
+
+        #track-map {
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            margin: 0 auto;
+            display: block;
+        }
+
+        .lap-data-card {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .lap-data-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .lap-data-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .lap-data-label {
+            font-size: 13px;
+            font-weight: bold;
+            color: #666;
+        }
+
+        .lap-data-value {
+            font-size: 14px;
+            font-weight: bold;
+            color: #007bff;
+            text-align: right;
+        }
+
+        /* Responsive design for smaller screens */
+        @media (max-width: 768px) {
+            .main-content {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .left-controls {
+                width: 100%;
+                order: 1;
+            }
+
+            .map-container {
+                order: 2;
+            }
+
+            .telemetry-sidebar {
+                width: 100%;
+                order: 3;
+            }
+
+            .title-container {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .title-text {
+                text-align: center;
+            }
+
+            .gr-cup-logo {
+                height: 60px;
+            }
+
+            .event-name {
+                font-size: 20px;
+            }
+
+            .track-info {
+                font-size: 18px;
+            }
+
+            .event-details {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title-container">
+            <div class="logo-container">
+                <img src="gr_cup_namer.png" alt="GR Cup North America" class="gr-cup-logo">
+            </div>
+            <div class="title-text">
+                <div class="event-name" id="event-name">Toyota GR Cup - API Demo</div>
+                <div class="track-info" id="track-info">Loading track information...</div>
+                <div class="event-details" id="event-details">Loading event details...</div>
+            </div>
+        </div>
+
+        <!-- API Status Indicator -->
+        <div class="api-status loading" id="api-status">
+            <span class="api-indicator loading" id="api-indicator">⚡</span>
+            <strong>API Status:</strong> <span id="api-status-text">Connecting to server...</span>
+        </div>
+
+        <div class="main-content">
+            <div class="left-controls">
+                <div class="control-panel">
+                    <div class="control-title">Race Controls</div>
+
+                    <div class="selector-group">
+                        <label for="race-dropdown">Select Race:</label>
+                        <select id="race-dropdown">
+                            <option value="R1">Race 1</option>
+                            <option value="R2">Race 2</option>
+                        </select>
+                    </div>
+
+                    <div class="selector-group">
+                        <label for="car-dropdown">Select Car:</label>
+                        <select id="car-dropdown">
+                            <option value="">Loading cars...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="control-panel">
+                    <div class="control-title">Lap Data</div>
+
+                    <div class="lap-data-card">
+                        <div class="lap-data-row">
+                            <span class="lap-data-label">Lap Number:</span>
+                            <span class="lap-data-value" id="lap-number-value">--</span>
+                        </div>
+                        <div class="lap-data-row">
+                            <span class="lap-data-label">Lap Start Time:</span>
+                            <span class="lap-data-value" id="lap-start-time-value">--:--:---</span>
+                        </div>
+                        <div class="lap-data-row">
+                            <span class="lap-data-label">Lap End Time:</span>
+                            <span class="lap-data-value" id="lap-end-time-value">--:--:---</span>
+                        </div>
+                        <div class="lap-data-row">
+                            <span class="lap-data-label">Lap Total Time:</span>
+                            <span class="lap-data-value" id="lap-total-time-value">--:--:---</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="map-container">
+                <svg id="track-map"></svg>
+            </div>
+
+            <div class="telemetry-sidebar">
+                <div class="telemetry-title">Live Telemetry <span style="font-size: 12px; color: #666;">(API-Based)</span></div>
+
+                <div class="telemetry-card">
+                    <div class="telemetry-label">
+                        Speed
+                        <button class="unit-toggle" id="speed-unit-toggle" onclick="toggleSpeedUnit()" title="Toggle between mph and kph">mph</button>
+                    </div>
+                    <div class="telemetry-value" id="speed-value">--</div>
+                </div>
+
+                <div class="telemetry-card">
+                    <div class="telemetry-label">Gear</div>
+                    <div class="telemetry-value" id="gear-value">--</div>
+                </div>
+
+                <div class="telemetry-card">
+                    <div class="telemetry-label">Throttle Position</div>
+                    <div class="telemetry-value" id="throttle-value">--</div>
+                </div>
+
+                <div class="telemetry-card">
+                    <div class="telemetry-label">Rear Brake Pressure</div>
+                    <div class="telemetry-value" id="brake-rear-value">--</div>
+                </div>
+
+                <div class="telemetry-card">
+                    <div class="telemetry-label">Front Brake Pressure</div>
+                    <div class="telemetry-value" id="brake-front-value">--</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="timeline-controls">
+            <label for="time-slider">Race Time:</label>
+            <input type="range" id="time-slider" min="0" max="100" value="0" class="time-slider">
+            <div class="time-display">
+                <span id="current-time">00:00:00</span> / <span id="total-time">00:00:00</span>
+                <span id="lap-info">Lap: 1</span>
+            </div>
+
+            <div class="video-controls">
+                <button id="step-back-5s" class="video-button">⏮ -5s</button>
+                <button id="play-pause-button" class="video-button play-button">▶️ Play</button>
+                <button id="step-forward-5s" class="video-button">+5s ⏭</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="track-map-api.js"></script>
+
+    <script>
+        // API Status Management
+        let apiStatusElement = document.getElementById('api-status');
+        let apiIndicatorElement = document.getElementById('api-indicator');
+        let apiStatusTextElement = document.getElementById('api-status-text');
+
+        function updateApiStatus(status, message) {
+            apiStatusElement.className = `api-status ${status}`;
+            apiIndicatorElement.className = `api-indicator ${status}`;
+
+            switch(status) {
+                case 'loading':
+                    apiIndicatorElement.textContent = '⏳';
+                    break;
+                case 'error':
+                    apiIndicatorElement.textContent = '❌';
+                    break;
+                default:
+                    apiIndicatorElement.textContent = '✅';
+            }
+
+            apiStatusTextElement.textContent = message;
+        }
+
+        // Test API connectivity on load
+        async function testApiConnection() {
+            try {
+                updateApiStatus('loading', 'Testing API connection...');
+                const response = await fetch('http://localhost:8001/api/races');
+
+                if (response.ok) {
+                    const data = await response.json();
+                    updateApiStatus('', `Connected! Found ${data.races.length} races available via API`);
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                console.error('API connection test failed:', error);
+                updateApiStatus('error', 'API server not available. Start server with: python api_server.py');
+            }
+        }
+
+        // Test connection when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(testApiConnection, 1000); // Give the viewer time to initialize
+        });
+    </script>
+</body>
+</html>
