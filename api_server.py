@@ -14,6 +14,8 @@ from dateutil import parser as dateparser
 import json
 from functools import lru_cache
 import logging
+import asyncio
+from ai_assistant import get_racing_ai
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for browser requests
@@ -560,6 +562,270 @@ def get_lap_data(race_id, vehicle_id):
         return jsonify({'error': str(e)}), 500
 
 
+# === AI ASSISTANT ENDPOINTS ===
+
+@app.route('/api/ai/regions', methods=['GET'])
+def get_aws_regions():
+    """Get list of supported AWS regions for Bedrock"""
+    # Common AWS regions that support Bedrock
+    regions = [
+        {'id': 'us-east-1', 'name': 'US East (N. Virginia)'},
+        {'id': 'us-west-2', 'name': 'US West (Oregon)'},
+        {'id': 'us-west-1', 'name': 'US West (N. California)'},
+        {'id': 'eu-west-1', 'name': 'Europe (Ireland)'},
+        {'id': 'eu-central-1', 'name': 'Europe (Frankfurt)'},
+        {'id': 'ap-northeast-1', 'name': 'Asia Pacific (Tokyo)'},
+        {'id': 'ap-southeast-1', 'name': 'Asia Pacific (Singapore)'},
+        {'id': 'ap-southeast-2', 'name': 'Asia Pacific (Sydney)'}
+    ]
+
+    return jsonify({
+        'regions': regions,
+        'default': 'us-west-2'
+    })
+
+@app.route('/api/ai/test-connection', methods=['POST'])
+def test_ai_connection():
+    """Test connection to Amazon Bedrock"""
+    try:
+        data = request.get_json() or {}
+        region = data.get('region', 'us-west-2')
+
+        # Get AI assistant and test connection
+        ai_assistant = get_racing_ai(region)
+        result = ai_assistant.test_connection(region)
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error testing AI connection: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Connection test failed: {str(e)}',
+            'error': str(e)
+        }), 500
+
+def aggregate_telemetry_context(race_id, vehicle_id, lap_number=None, time_range=None):
+    """
+    Aggregate telemetry data for AI context
+
+    Args:
+        race_id: Race identifier (R1, R2)
+        vehicle_id: Vehicle identifier
+        lap_number: Optional specific lap number
+        time_range: Optional time range dict with start_time/end_time
+
+    Returns:
+        Dictionary with aggregated telemetry context
+    """
+    try:
+        context = {
+            'race_id': race_id,
+            'vehicle_id': vehicle_id,
+            'track_info': {'name': 'Barber Motorsports Park'}
+        }
+
+        # Load telemetry data
+        telemetry_data = load_telemetry_data(race_id)
+        if vehicle_id not in telemetry_data:
+            return context
+
+        vehicle_data = telemetry_data[vehicle_id]
+
+        # Get best lap data for comparison
+        try:
+            best_laps_data = load_best_laps_data(race_id)
+            car_number = None
+            if '-' in vehicle_id:
+                parts = vehicle_id.split('-')
+                if len(parts) >= 3:
+                    try:
+                        car_number = int(parts[-1])
+                    except ValueError:
+                        pass
+
+            if car_number and car_number in best_laps_data:
+                official_data = best_laps_data[car_number]
+                context['best_lap'] = {
+                    'lap_number': official_data['best_lap_number'],
+                    'lap_time': official_data['best_lap_time'],
+                    'total_laps': official_data['total_laps']
+                }
+        except Exception as e:
+            logger.warning(f"Could not load best lap data: {e}")
+
+        # Filter by lap number if specified
+        if lap_number:
+            lap_data = vehicle_data[vehicle_data['lap'] == lap_number]
+            context['lap_number'] = lap_number
+            logger.info(f"Filtering telemetry for lap {lap_number}: {len(lap_data)} records")
+        elif time_range:
+            # Filter by time range
+            start_dt = pd.to_datetime(time_range['start_time'], utc=True)
+            end_dt = pd.to_datetime(time_range['end_time'], utc=True)
+            lap_data = vehicle_data[
+                (vehicle_data['timestamp'] >= start_dt) &
+                (vehicle_data['timestamp'] <= end_dt)
+            ]
+        else:
+            # Use recent data sample (last 1000 points)
+            lap_data = vehicle_data.tail(1000)
+
+        if len(lap_data) == 0:
+            return context
+
+        # Build telemetry points for AI context
+        telemetry_points = []
+        for timestamp, timestamp_group in lap_data.groupby('timestamp'):
+            # Build telemetry dictionary for this timestamp
+            telemetry_dict = {}
+            lap_num = None
+
+            for _, row in timestamp_group.iterrows():
+                telemetry_dict[row['telemetry_name']] = row['telemetry_value']
+                if lap_num is None:
+                    lap_num = row['lap']
+
+            # Only include if we have GPS coordinates
+            if 'VBOX_Lat_Min' in telemetry_dict and 'VBOX_Long_Minutes' in telemetry_dict:
+                point = {
+                    'timestamp': timestamp.isoformat(),
+                    'lap': int(lap_num) if lap_num else 1,
+                    'latitude': telemetry_dict['VBOX_Lat_Min'],
+                    'longitude': telemetry_dict['VBOX_Long_Minutes'],
+                    'speed': telemetry_dict.get('speed'),
+                    'gear': telemetry_dict.get('gear'),
+                    'throttle': telemetry_dict.get('aps'),
+                    'brake_rear': telemetry_dict.get('pbrake_r'),
+                    'brake_front': telemetry_dict.get('pbrake_f'),
+                    'engine_rpm': telemetry_dict.get('nmot'),
+                    'steering_angle': telemetry_dict.get('Steering_Angle'),
+                    'g_force_x': telemetry_dict.get('accx_can'),
+                    'g_force_y': telemetry_dict.get('accy_can'),
+                    'lap_distance': telemetry_dict.get('Laptrigger_lapdist_dls')
+                }
+                telemetry_points.append(point)
+
+        # Calculate current lap summary
+        if telemetry_points:
+            current_lap_num = telemetry_points[0]['lap']
+            lap_points = [p for p in telemetry_points if p['lap'] == current_lap_num]
+
+            if lap_points:
+                # Calculate lap time from timestamp range
+                start_time = pd.to_datetime(lap_points[0]['timestamp'])
+                end_time = pd.to_datetime(lap_points[-1]['timestamp'])
+                lap_duration = (end_time - start_time).total_seconds()
+
+                # For specific lap requests, include more comprehensive data for professional analysis
+                # Professional racing analysis needs high-resolution data for critical events
+                if lap_number:
+                    # Use up to 8000 points for lap-specific analysis (provides ~99% coverage)
+                    # This ensures we capture all braking events, corner entries, and throttle modulation
+                    max_points = min(8000, len(lap_points))
+                else:
+                    # For general queries without specific lap, use smaller sample
+                    max_points = 500
+
+                # Sample points evenly across the lap for better representation
+                if len(lap_points) > max_points:
+                    # Calculate sampling interval to get even distribution
+                    interval = len(lap_points) / max_points
+                    sampled_points = []
+                    for i in range(max_points):
+                        index = int(i * interval)
+                        if index < len(lap_points):
+                            sampled_points.append(lap_points[index])
+                    telemetry_points = sampled_points
+                else:
+                    telemetry_points = lap_points
+
+                context['current_lap'] = {
+                    'lap_number': current_lap_num,
+                    'lap_time': format_lap_time_from_ms(int(lap_duration * 1000)) if lap_duration > 30 else None,
+                    'telemetry_points': telemetry_points,
+                    'total_points': len(lap_points),
+                    'sampled_points': len(telemetry_points),
+                    'complete_lap_requested': lap_number is not None
+                }
+
+        return context
+
+    except Exception as e:
+        logger.error(f"Error aggregating telemetry context: {str(e)}")
+        return {
+            'race_id': race_id,
+            'vehicle_id': vehicle_id,
+            'error': f'Failed to aggregate context: {str(e)}'
+        }
+
+@app.route('/api/ai/analyze', methods=['POST'])
+def analyze_racing_question():
+    """Analyze racing question with telemetry context using AI"""
+    try:
+        # Parse request data
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+
+        # Required fields
+        question = data.get('question', '').strip()
+        if not question:
+            return jsonify({'error': 'Question is required'}), 400
+
+        race_id = data.get('race_id')
+        vehicle_id = data.get('vehicle_id')
+        if not race_id or not vehicle_id:
+            return jsonify({'error': 'race_id and vehicle_id are required'}), 400
+
+        # Optional fields
+        region = data.get('region', 'us-west-2')
+        lap_number = data.get('lap_number')
+        time_range = data.get('time_range')  # {start_time, end_time}
+
+        logger.info(f"AI analysis request: {race_id}/{vehicle_id}, lap={lap_number}, region={region}")
+
+        # Aggregate telemetry context
+        telemetry_context = aggregate_telemetry_context(
+            race_id=race_id,
+            vehicle_id=vehicle_id,
+            lap_number=lap_number,
+            time_range=time_range
+        )
+
+        # Get AI assistant and analyze
+        ai_assistant = get_racing_ai(region)
+
+        # Since we're in a Flask route, we need to run the async function
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(
+                ai_assistant.analyze_racing_question(question, telemetry_context, region)
+            )
+        finally:
+            loop.close()
+
+        # Add request context to response
+        result['request_context'] = {
+            'race_id': race_id,
+            'vehicle_id': vehicle_id,
+            'lap_number': lap_number,
+            'question': question,
+            'region': region
+        }
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error in AI analysis: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Analysis failed: {str(e)}',
+            'error_type': 'server_error'
+        }), 500
+
+
 # Serve static files for the web app
 @app.route('/')
 def serve_index():
@@ -594,5 +860,9 @@ if __name__ == '__main__':
     print("   GET /api/telemetry/{race_id}/{vehicle_id}/chunk")
     print("   GET /api/telemetry/{race_id}/{vehicle_id}/position")
     print("   GET /api/laps/{race_id}/{vehicle_id}")
+    print("🤖 AI Assistant endpoints:")
+    print("   GET /api/ai/regions")
+    print("   POST /api/ai/test-connection")
+    print("   POST /api/ai/analyze")
 
     app.run(host='0.0.0.0', port=8001, debug=True, threaded=True)

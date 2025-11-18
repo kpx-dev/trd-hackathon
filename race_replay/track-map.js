@@ -54,6 +54,11 @@ class ApiTrackMapViewer {
         this.lapData = {};
         this.bestLapInfo = null;
 
+        // AI Assistant properties
+        this.aiRegion = 'us-west-2'; // Default region
+        this.aiConnected = false;
+        this.aiMessaging = false;
+        this.currentLapNumber = null;
 
         this.init();
     }
@@ -90,6 +95,7 @@ class ApiTrackMapViewer {
         this.setupRaceSelector();
         this.setupCarSelector();
         this.setupTimeline();
+        this.setupAIAssistant();
 
         // Disable Race Time controls initially (no car loaded)
         this.disableRaceTimeControls();
@@ -357,6 +363,9 @@ class ApiTrackMapViewer {
 
         await this.loadAvailableCars();
 
+        // Update AI context after race change
+        this.updateAIContextInfo();
+
         // Keep controls disabled until a car is selected
         // They will be re-enabled in onCarSelectionChange()
     }
@@ -407,12 +416,18 @@ class ApiTrackMapViewer {
             // Re-enable Race Time controls after loading is complete
             this.enableRaceTimeControls();
 
+            // Update AI context after successful car selection
+            this.updateAIContextInfo();
+
         } catch (error) {
             this.showError(`Failed to load data for ${this.selectedCar}`);
             this.hideStatusMessage();
 
             // Re-enable controls even on error
             this.enableRaceTimeControls();
+
+            // Update AI context even on error
+            this.updateAIContextInfo();
         }
     }
 
@@ -531,6 +546,13 @@ class ApiTrackMapViewer {
         if (dataPoint) {
             if (lapInfoSpan) {
                 lapInfoSpan.textContent = `Lap: ${dataPoint.lap}`;
+            }
+
+            // Update AI context if lap has changed
+            const newLapNumber = dataPoint.lap;
+            if (this.currentLapNumber !== newLapNumber) {
+                this.currentLapNumber = newLapNumber;
+                this.updateAIContextInfo();
             }
 
             this.updateTelemetryDisplay(dataPoint);
@@ -1364,6 +1386,281 @@ class ApiTrackMapViewer {
 
         if (this.timelineData.length > 0) {
             this.updateCarPosition(this.currentPosition);
+        }
+    }
+
+    // === AI Assistant Methods ===
+
+    setupAIAssistant() {
+        console.log('🤖 Setting up AI Assistant...');
+
+        // Setup region selector
+        const regionSelect = document.getElementById('ai-region-select');
+        if (regionSelect) {
+            regionSelect.addEventListener('change', (event) => {
+                this.aiRegion = event.target.value;
+                console.log(`🌍 AI region changed to: ${this.aiRegion}`);
+                this.updateAIStatus('Region changed. Testing connection...');
+                this.testAIConnection();
+            });
+        }
+
+        // Setup send button
+        const sendButton = document.getElementById('ai-send-btn');
+        if (sendButton) {
+            sendButton.addEventListener('click', () => this.sendAIQuestion());
+        }
+
+        // Setup input field
+        const questionInput = document.getElementById('ai-question-input');
+        if (questionInput) {
+            questionInput.addEventListener('keypress', (event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    this.sendAIQuestion();
+                }
+            });
+
+            questionInput.addEventListener('input', () => {
+                const sendBtn = document.getElementById('ai-send-btn');
+                if (sendBtn) {
+                    sendBtn.disabled = !questionInput.value.trim() || this.aiMessaging;
+                }
+            });
+        }
+
+        // Test initial connection
+        this.testAIConnection();
+    }
+
+    async testAIConnection() {
+        console.log(`🔗 Testing AI connection to region: ${this.aiRegion}`);
+
+        try {
+            const response = await fetch(`${this.baseUrl}/ai/test-connection`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    region: this.aiRegion
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.aiConnected = true;
+                this.updateAIStatus(`Connected to ${result.region}`, 'connected');
+                console.log('✅ AI connection successful:', result.message);
+            } else {
+                this.aiConnected = false;
+                this.updateAIStatus(`Connection failed: ${result.error}`, 'error');
+                console.error('❌ AI connection failed:', result.error);
+            }
+
+        } catch (error) {
+            this.aiConnected = false;
+            this.updateAIStatus(`Connection error: ${error.message}`, 'error');
+            console.error('❌ AI connection error:', error);
+        }
+
+        this.updateAIContextInfo();
+        this.updateSendButtonState();
+    }
+
+    async sendAIQuestion() {
+        const questionInput = document.getElementById('ai-question-input');
+        const sendButton = document.getElementById('ai-send-btn');
+
+        if (!questionInput || !sendButton) return;
+
+        const question = questionInput.value.trim();
+        if (!question) return;
+
+        if (!this.aiConnected) {
+            this.addAIMessage('Please wait for AI connection to be established.', 'error');
+            return;
+        }
+
+        if (!this.selectedCar) {
+            this.addAIMessage('Please select a car first to provide telemetry context.', 'error');
+            return;
+        }
+
+        // Set messaging state
+        this.aiMessaging = true;
+        this.updateSendButtonState();
+
+        // Add user message to chat
+        this.addAIMessage(question, 'user');
+
+        // Clear input
+        questionInput.value = '';
+
+        // Show loading message
+        const loadingMessageId = this.addAIMessage('🤔 Analyzing telemetry data...', 'assistant', true);
+
+        try {
+            console.log(`🧠 Sending AI question: "${question}"`);
+
+            // Get current lap number from UI or current position
+            const currentLap = this.getCurrentLapNumber();
+
+            const requestData = {
+                question: question,
+                race_id: this.selectedRace,
+                vehicle_id: this.selectedCar,
+                region: this.aiRegion,
+                lap_number: currentLap
+            };
+
+            const response = await fetch(`${this.baseUrl}/ai/analyze`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestData)
+            });
+
+            const result = await response.json();
+
+            // Remove loading message
+            this.removeAIMessage(loadingMessageId);
+
+            if (result.success) {
+                this.addAIMessage(result.response, 'assistant');
+                console.log('✅ AI analysis successful');
+
+                // Log token usage
+                if (result.metadata) {
+                    console.log(`📊 Tokens used: ${result.metadata.input_tokens} in, ${result.metadata.output_tokens} out`);
+                }
+            } else {
+                this.addAIMessage(`Analysis failed: ${result.error}`, 'error');
+                console.error('❌ AI analysis failed:', result.error);
+            }
+
+        } catch (error) {
+            // Remove loading message
+            this.removeAIMessage(loadingMessageId);
+            this.addAIMessage(`Network error: ${error.message}`, 'error');
+            console.error('❌ AI request error:', error);
+        }
+
+        // Reset messaging state
+        this.aiMessaging = false;
+        this.updateSendButtonState();
+    }
+
+    getCurrentLapNumber() {
+        // Try to get current lap from telemetry display
+        const lapInfo = document.getElementById('lap-info');
+        if (lapInfo && lapInfo.textContent) {
+            const match = lapInfo.textContent.match(/Lap:\s*(\d+)/);
+            if (match) {
+                return parseInt(match[1]);
+            }
+        }
+
+        // Fallback: if we have timeline data, get lap from current position
+        if (this.timelineData && this.timelineData.length > 0 && this.currentPosition < this.timelineData.length) {
+            return this.timelineData[this.currentPosition].lap;
+        }
+
+        return null;
+    }
+
+    updateAIStatus(message, type = 'default') {
+        const statusElement = document.getElementById('ai-status');
+        if (statusElement) {
+            statusElement.textContent = message;
+
+            // Remove existing status classes
+            statusElement.classList.remove('connected', 'error');
+
+            // Add new status class
+            if (type !== 'default') {
+                statusElement.classList.add(type);
+            }
+        }
+    }
+
+    updateAIContextInfo() {
+        const contextElement = document.getElementById('ai-context-info');
+        if (!contextElement) return;
+
+        let contextText = '';
+
+        if (!this.selectedCar) {
+            contextText = 'Select a car and lap to start analysis';
+        } else {
+            const carParts = this.selectedCar.split('-');
+            const carNumber = carParts.length >= 3 ? carParts[2] : this.selectedCar;
+            const currentLap = this.getCurrentLapNumber();
+
+            contextText = `Car #${carNumber}, ${this.selectedRace}`;
+            if (currentLap) {
+                contextText += `, Lap ${currentLap}`;
+            }
+        }
+
+        contextElement.textContent = contextText;
+    }
+
+    updateSendButtonState() {
+        const sendButton = document.getElementById('ai-send-btn');
+        const questionInput = document.getElementById('ai-question-input');
+
+        if (sendButton && questionInput) {
+            const hasQuestion = questionInput.value.trim().length > 0;
+            const canSend = this.aiConnected && hasQuestion && !this.aiMessaging;
+
+            sendButton.disabled = !canSend;
+
+            if (this.aiMessaging) {
+                sendButton.innerHTML = '<span class="ai-loading"></span>Analyzing...';
+            } else {
+                sendButton.textContent = 'Send';
+            }
+        }
+    }
+
+    addAIMessage(content, type = 'assistant', isLoading = false) {
+        const messagesContainer = document.getElementById('ai-messages');
+        if (!messagesContainer) return null;
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `ai-message ${type}`;
+
+        const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        messageDiv.id = messageId;
+
+        const timeSpan = document.createElement('div');
+        timeSpan.className = 'message-time';
+        timeSpan.textContent = new Date().toLocaleTimeString();
+
+        const contentSpan = document.createElement('div');
+        contentSpan.className = 'message-content';
+        contentSpan.textContent = content;
+
+        messageDiv.appendChild(timeSpan);
+        messageDiv.appendChild(contentSpan);
+
+        messagesContainer.appendChild(messageDiv);
+
+        // Scroll to bottom
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        return messageId;
+    }
+
+    removeAIMessage(messageId) {
+        if (messageId) {
+            const messageElement = document.getElementById(messageId);
+            if (messageElement) {
+                messageElement.remove();
+            }
         }
     }
 }
