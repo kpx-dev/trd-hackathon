@@ -79,7 +79,7 @@
         }
 
         .left-controls {
-            width: 380px;
+            width: 480px;
             flex-shrink: 0;
             display: flex;
             flex-direction: column;
@@ -108,12 +108,12 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            max-width: calc(100vw - 680px);
+            max-width: calc(100vw - 720px);
             min-width: 550px;
         }
 
         .telemetry-sidebar {
-            width: 260px;
+            width: 200px;
             flex-shrink: 0;
             background-color: #f8f9fa;
             border: 2px solid #ddd;
@@ -177,7 +177,7 @@
             border: 2px solid #4285f4;
             border-radius: 8px;
             padding: 15px;
-            min-height: 400px;
+            min-height: 600px;
             display: flex;
             flex-direction: column;
         }
@@ -223,7 +223,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            min-height: 200px;
+            min-height: 350px;
         }
 
         .ai-messages {
@@ -233,7 +233,7 @@
             padding: 10px;
             background-color: white;
             overflow-y: auto;
-            max-height: 260px;
+            max-height: 400px;
             margin-bottom: 10px;
             font-size: 13px;
             line-height: 1.4;
@@ -281,24 +281,25 @@
 
         .ai-question-input {
             flex: 1;
-            padding: 8px;
-            font-size: 13px;
+            padding: 12px;
+            font-size: 14px;
             border: 1px solid #ccc;
             border-radius: 4px;
             resize: vertical;
-            min-height: 20px;
-            max-height: 60px;
+            min-height: 50px;
+            max-height: 120px;
         }
 
         .ai-send-btn {
             background-color: #4285f4;
             color: white;
             border: none;
-            padding: 8px 12px;
+            padding: 15px 18px;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 14px;
             font-weight: bold;
+            align-self: flex-end;
         }
 
         .ai-send-btn:hover:not(:disabled) {
@@ -363,6 +364,86 @@
             align-items: center;
             justify-content: space-between;
             margin-bottom: 10px;
+        }
+
+        .ai-header-buttons {
+            display: flex;
+            gap: 5px;
+        }
+
+        .ai-expand-btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: bold;
+            transition: background-color 0.2s ease;
+        }
+
+        .ai-expand-btn:hover:not(:disabled) {
+            background-color: #218838;
+        }
+
+        .ai-expand-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        /* Expanded AI Coach Styles */
+        .ai-expanded {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #f0f8ff;
+            z-index: 1000;
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ai-expanded .ai-chat-container {
+            flex: 1;
+            max-height: none;
+        }
+
+        .ai-expanded .ai-messages {
+            max-height: calc(100vh - 200px);
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        .ai-expanded .ai-question-input {
+            font-size: 16px;
+            padding: 12px;
+            min-height: 40px;
+        }
+
+        .ai-expanded .ai-send-btn {
+            font-size: 16px;
+            padding: 12px 20px;
+        }
+
+        .ai-expanded .ai-title {
+            font-size: 24px;
+        }
+
+        .ai-expanded .ai-expand-btn {
+            background-color: #dc3545;
+        }
+
+        .ai-expanded .ai-expand-btn:hover:not(:disabled) {
+            background-color: #c82333;
+        }
+
+        /* Hide other content when AI is expanded */
+        .content-hidden {
+            display: none;
         }
 
         .telemetry-value {
@@ -645,7 +726,7 @@
 </head>
 <body>
     <div class="container">
-        <div class="title-container">
+        <div class="title-container" id="main-title-container">
             <div class="logo-container">
                 <img src="gr_cup_namer.png" alt="GR Cup North America" class="gr-cup-logo">
             </div>
@@ -657,8 +738,8 @@
         </div>
 
 
-        <div class="main-content">
-            <div class="left-controls">
+        <div class="main-content" id="main-content">
+            <div class="left-controls" id="main-left-controls">
                 <div class="control-panel">
                     <div class="control-title">Race Controls</div>
 
@@ -712,7 +793,10 @@
                             <span class="ai-emoji">🤖</span>
                             AI Racing Coach
                         </div>
-                        <button id="ai-reset-btn" class="ai-reset-btn" title="Reset conversation and clear agent memory">🔄 Reset</button>
+                        <div class="ai-header-buttons">
+                            <button id="ai-expand-btn" class="ai-expand-btn" title="Expand AI coach to full screen">⛶ Expand</button>
+                            <button id="ai-reset-btn" class="ai-reset-btn" title="Reset conversation and clear agent memory">🔄 Reset</button>
+                        </div>
                     </div>
 
                     <div class="ai-status" id="ai-status">
@@ -752,7 +836,7 @@ Select a car and lap, then ask me anything!</div>
 
             </div>
 
-            <div class="map-container">
+            <div class="map-container" id="main-map-container">
                 <svg id="track-map"></svg>
 
                 <!-- Timeline controls moved here for better positioning -->
@@ -778,7 +862,7 @@ Select a car and lap, then ask me anything!</div>
                 </div>
             </div>
 
-            <div class="telemetry-sidebar">
+            <div class="telemetry-sidebar" id="main-telemetry-sidebar">
                 <div class="telemetry-title">Live Telemetry</div>
 
                 <div class="telemetry-card">

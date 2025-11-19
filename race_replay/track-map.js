@@ -1462,6 +1462,12 @@ class ApiTrackMapViewer {
             resetButton.addEventListener('click', () => this.resetConversation());
         }
 
+        // Setup expand button
+        const expandButton = document.getElementById('ai-expand-btn');
+        if (expandButton) {
+            expandButton.addEventListener('click', () => this.toggleAIExpanded());
+        }
+
         // Setup input field
         const questionInput = document.getElementById('ai-question-input');
         if (questionInput) {
@@ -1823,6 +1829,77 @@ Select a car and lap, then ask me anything!</div>
         } catch (error) {
             console.warn('⚠️ Agent reset not available:', error.message);
             this.addAIMessage('Chat cleared. Note: Agent memory persists until page refresh.', 'assistant');
+        }
+    }
+
+    toggleAIExpanded() {
+        console.log('🔄 Toggling AI Coach expanded view...');
+
+        const aiPanel = document.querySelector('.ai-assistant-panel');
+        const expandButton = document.getElementById('ai-expand-btn');
+
+        if (!aiPanel || !expandButton) {
+            console.warn('⚠️ AI panel or expand button not found');
+            return;
+        }
+
+        const isExpanded = aiPanel.classList.contains('ai-expanded');
+
+        if (isExpanded) {
+            // Collapse: Remove expanded class and show other content
+            aiPanel.classList.remove('ai-expanded');
+            expandButton.textContent = '⛶ Expand';
+            expandButton.title = 'Expand AI coach to full screen';
+
+            // Show hidden content
+            const elementsToShow = [
+                'main-title-container',
+                'main-map-container',
+                'main-telemetry-sidebar'
+            ];
+
+            elementsToShow.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.classList.remove('content-hidden');
+                }
+            });
+
+            // Also show the other controls in the left panel
+            const controlPanels = document.querySelectorAll('.control-panel');
+            controlPanels.forEach(panel => {
+                panel.classList.remove('content-hidden');
+            });
+
+            console.log('✅ AI Coach collapsed to normal view');
+
+        } else {
+            // Expand: Add expanded class and hide other content
+            aiPanel.classList.add('ai-expanded');
+            expandButton.textContent = '⤚ Collapse';
+            expandButton.title = 'Return to normal view';
+
+            // Hide other content
+            const elementsToHide = [
+                'main-title-container',
+                'main-map-container',
+                'main-telemetry-sidebar'
+            ];
+
+            elementsToHide.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.classList.add('content-hidden');
+                }
+            });
+
+            // Also hide the other controls in the left panel
+            const controlPanels = document.querySelectorAll('.control-panel');
+            controlPanels.forEach(panel => {
+                panel.classList.add('content-hidden');
+            });
+
+            console.log('✅ AI Coach expanded to full screen');
         }
     }
 }

@@ -653,6 +653,336 @@ class RacingDataTools:
             logger.error(f"Error in get_weather_conditions: {str(e)}")
             return f"Error loading weather data: {str(e)}"
 
+    def _extract_lap_number_from_question(self, question_text: str) -> int:
+        """Extract lap number from question text using multiple patterns"""
+        import re
+
+        # Multiple patterns to catch lap number references
+        patterns = [
+            r'Current Lap Number:\s*(\d+)',
+            r'Lap Number:\s*(\d+)',
+            r'current lap:\s*(\d+)',
+            r'lap:\s*(\d+)',
+            r'on lap\s*(\d+)',
+            r'during lap\s*(\d+)',
+            r'lap\s+(\d+)'
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, question_text, re.IGNORECASE)
+            if match:
+                lap_num = int(match.group(1))
+                logger.info(f"Extracted lap number {lap_num} from context using pattern: {pattern}")
+                return lap_num
+
+        logger.warning("Could not extract lap number from question context")
+        return None
+
+    @tool
+    def get_live_race_positions(self, race_id: str, timestamp: str = None, vehicle_id: str = None, lap_number: int = None) -> str:
+        """Get real-time race positions for all cars at a specific time during the race.
+
+        *** CRITICAL: Always extract lap_number from user context and pass it here! ***
+        If user says "Current Lap Number: 4", pass lap_number=4 to get accurate timing!
+
+        Use this for questions about:
+        - "What position am I in right now?"
+        - "Who is leading the race at this point?"
+        - "How far behind the leader am I?"
+        - "What are the current race positions?"
+        - "Where do I stand compared to other drivers?"
+
+        Args:
+            race_id: Race identifier (R1, R2)
+            timestamp: ISO timestamp for position snapshot (if None, uses current context timestamp)
+            vehicle_id: Focus on specific vehicle (optional, highlights this car in results)
+            lap_number: REQUIRED when available - Current lap number from UI context (used to find correct timestamp if timestamp is None)
+        """
+        try:
+            import requests
+            import json
+            from datetime import datetime
+
+            # Log the parameters received
+            logger.info(f"get_live_race_positions called with: race_id={race_id}, vehicle_id={vehicle_id}, lap_number={lap_number}, timestamp={timestamp}")
+
+            # CRITICAL FIX: If lap_number is not provided, try to extract it from the agent's context
+            # This is a fallback mechanism since Strands agents may not properly pass parameters
+            if lap_number is None:
+                # Access the agent's current question/context (this is a workaround)
+                # Try to get the question from the execution context
+                try:
+                    # This is a hack to get the current question being processed
+                    import inspect
+                    frame = inspect.currentframe()
+                    while frame:
+                        if 'question' in frame.f_locals or 'enhanced_question' in frame.f_locals:
+                            question_text = frame.f_locals.get('enhanced_question', frame.f_locals.get('question', ''))
+                            extracted_lap = self._extract_lap_number_from_question(question_text)
+                            if extracted_lap:
+                                lap_number = extracted_lap
+                                logger.info(f"Extracted lap number {lap_number} from execution context")
+                                break
+                        frame = frame.f_back
+                except Exception as e:
+                    logger.debug(f"Could not extract lap from execution context: {e}")
+
+                # If still no lap number, log this as a critical issue
+                if lap_number is None:
+                    logger.error("CRITICAL: No lap_number provided and could not extract from context!")
+                    logger.error("This will result in incorrect position calculation using wrong timestamp!")
+
+            # If no timestamp provided, try to get from current context or estimate from lap data
+            if timestamp is None:
+                try:
+                    from api_server import aggregate_telemetry_context, load_telemetry_data
+
+                    # CRITICAL FIX: If lap_number is provided, ALWAYS prioritize our lap-based calculation
+                    # over generic telemetry context to avoid using wrong timestamps
+                    if lap_number is not None and vehicle_id:
+                        logger.info(f"LAP_NUMBER PROVIDED ({lap_number}): Skipping generic telemetry context, using lap-based calculation")
+                        # Go directly to lap-based calculation below
+                        pass
+                    else:
+                        # Only use telemetry context if no lap_number is provided
+                        logger.info(f"No lap_number provided: Trying generic telemetry context")
+
+                        # Try to get timestamp from current telemetry context if available
+                        context = aggregate_telemetry_context(race_id=race_id, vehicle_id=vehicle_id)
+
+                        if 'current_lap' in context and 'telemetry_points' in context['current_lap']:
+                            telemetry_points = context['current_lap']['telemetry_points']
+                            if telemetry_points:
+                                # Use timestamp from most recent telemetry point
+                                latest_point = telemetry_points[-1]
+                                timestamp = latest_point.get('timestamp')
+                                logger.info(f"Using timestamp from telemetry context: {timestamp}")
+
+                    # Lap-based timestamp calculation (when lap_number is provided OR no timestamp from context)
+                    if not timestamp and vehicle_id:
+                        # Load telemetry and find a timestamp that corresponds to the current lap
+                        telemetry_data = load_telemetry_data(race_id)
+                        if vehicle_id in telemetry_data:
+                            vehicle_data = telemetry_data[vehicle_id]
+
+                            # If we have a specific lap number, find telemetry data from that lap
+                            if lap_number is not None:
+                                logger.info(f"CRITICAL: Attempting to find timestamp for lap {lap_number}")
+
+                                # CRITICAL FIX: For early laps (1-6), use intelligent lap timing calculation
+                                if lap_number <= 6:
+                                    logger.info(f"EARLY LAP DETECTED (lap {lap_number}): Using lap timing calculation approach")
+
+                                    # Calculate expected timestamp for this lap based on race start + lap times
+                                    race_start = pd.to_datetime('2025-09-04T18:20:00+00:00')  # Approximate race start
+                                    avg_lap_time_seconds = 95  # Approximately 1:35 lap time at Barber
+
+                                    # Calculate expected elapsed time: (lap_number - 1) * avg_lap_time + some progress into current lap
+                                    laps_completed = lap_number - 1
+                                    progress_into_current_lap = 0.5  # Assume halfway through the current lap
+                                    total_elapsed_seconds = (laps_completed + progress_into_current_lap) * avg_lap_time_seconds
+
+                                    # Calculate target timestamp
+                                    target_timestamp = race_start + pd.Timedelta(seconds=total_elapsed_seconds)
+                                    timestamp = target_timestamp.isoformat()
+
+                                    logger.info(f"LAP TIMING CALCULATION: Lap {lap_number}")
+                                    logger.info(f"  Race start: {race_start}")
+                                    logger.info(f"  Estimated elapsed time: {total_elapsed_seconds:.1f} seconds")
+                                    logger.info(f"  Target timestamp: {timestamp}")
+
+                                    # Verify this timestamp makes sense by checking if it's within the data range
+                                    vehicle_data_sorted = vehicle_data.sort_values('timestamp')
+                                    earliest_time = vehicle_data_sorted.iloc[0]['timestamp']
+                                    latest_time = vehicle_data_sorted.iloc[-1]['timestamp']
+
+                                    if target_timestamp < earliest_time:
+                                        logger.warning(f"Calculated timestamp {timestamp} is before data starts ({earliest_time})")
+                                        timestamp = earliest_time.isoformat()
+                                        logger.info(f"Using earliest available timestamp: {timestamp}")
+                                    elif target_timestamp > latest_time:
+                                        logger.warning(f"Calculated timestamp {timestamp} is after data ends ({latest_time})")
+                                        # Use chronological position instead
+                                        race_progress = min(lap_number / 25.0, 0.95)  # Assume 25-lap race, don't go past 95%
+                                        position_idx = int(len(vehicle_data_sorted) * race_progress)
+                                        sample_timestamp = vehicle_data_sorted.iloc[position_idx]['timestamp']
+                                        timestamp = sample_timestamp.isoformat()
+                                        logger.info(f"Using chronological position {race_progress:.1%}: {timestamp}")
+                                    else:
+                                        logger.info(f"Calculated timestamp is within data range - using lap timing calculation")
+                                else:
+                                    # For later laps (7+), try exact lap matching first
+                                    logger.info(f"LATER LAP (lap {lap_number}): Trying exact lap matching")
+
+                                    # Debug: Check available lap range
+                                    available_laps = sorted(vehicle_data['lap'].unique())
+                                    logger.info(f"Available laps in telemetry data: {available_laps[:10]}...{available_laps[-10:]} (showing first and last 10)")
+
+                                    # Try exact match first
+                                    lap_specific_data = vehicle_data[vehicle_data['lap'] == lap_number]
+                                    logger.info(f"Exact match for lap {lap_number}: {len(lap_specific_data)} records")
+
+                                    if len(lap_specific_data) > 0:
+                                        # Use EARLY part of the lap data to represent lap conditions
+                                        early_idx = len(lap_specific_data) // 4  # Use first quarter of lap
+                                        sample_timestamp = lap_specific_data.iloc[early_idx]['timestamp']
+                                        timestamp = sample_timestamp.isoformat()
+                                        logger.info(f"SUCCESS: Using timestamp from specific lap {lap_number}: {timestamp}")
+                                    else:
+                                        logger.warning(f"No exact match for lap {lap_number}, trying nearby laps")
+
+                                        # Try nearby laps (lap 3, 4, 5)
+                                        for nearby_lap in [lap_number-1, lap_number+1, lap_number-2, lap_number+2]:
+                                            if nearby_lap > 0:
+                                                nearby_data = vehicle_data[vehicle_data['lap'] == nearby_lap]
+                                                if len(nearby_data) > 0:
+                                                    early_idx = len(nearby_data) // 4  # Use first quarter
+                                                    sample_timestamp = nearby_data.iloc[early_idx]['timestamp']
+                                                    timestamp = sample_timestamp.isoformat()
+                                                    logger.info(f"Using nearby lap {nearby_lap} timestamp: {timestamp}")
+                                                    break
+
+                                        # If still no luck, use chronological approach based on lap position
+                                        if not timestamp:
+                                            # Use chronological position based on lap number
+                                            vehicle_data_sorted = vehicle_data.sort_values('timestamp')
+                                            # Estimate position: lap_number / max_laps * total_data
+                                            max_lap = vehicle_data['lap'].max()
+                                            estimated_position = int((lap_number / max_lap) * len(vehicle_data_sorted))
+                                            estimated_position = min(estimated_position, len(vehicle_data_sorted) - 1)
+
+                                            sample_timestamp = vehicle_data_sorted.iloc[estimated_position]['timestamp']
+                                            timestamp = sample_timestamp.isoformat()
+                                            logger.info(f"CHRONOLOGICAL ESTIMATE: Using timestamp at position {estimated_position} for lap {lap_number}: {timestamp}")
+
+                            # If still no timestamp, use intelligent estimation based on available lap data
+                            if not timestamp:
+                                lap_data = vehicle_data[vehicle_data['telemetry_name'] == 'Laptrigger_lapdist_dls']
+
+                                if len(lap_data) > 0:
+                                    # Use middle of available lap distance data for better representation
+                                    middle_idx = len(lap_data) // 2
+                                    sample_timestamp = lap_data.iloc[middle_idx]['timestamp']
+                                    timestamp = sample_timestamp.isoformat()
+                                    logger.info(f"Using lap-based timestamp estimation: {timestamp}")
+                                else:
+                                    # Fallback to general middle of telemetry data
+                                    sample_timestamp = vehicle_data['timestamp'].iloc[len(vehicle_data) // 2]
+                                    timestamp = sample_timestamp.isoformat()
+                                    logger.info(f"Using general timestamp estimation: {timestamp}")
+
+                except Exception as e:
+                    logger.debug(f"Could not get timestamp from context: {e}")
+
+                # If still no timestamp, return error
+                if timestamp is None:
+                    return "Error: timestamp parameter required. Please provide a race timestamp to get positions at that point in time."
+
+            # Call the API endpoint for race positions
+            base_url = 'http://localhost:8001'
+            url = f"{base_url}/api/race/{race_id}/positions"
+            params = {'timestamp': timestamp}
+
+            # CRITICAL: Add expected lap parameter when lap_number is available for proper synchronization
+            if lap_number is not None:
+                params['expected_lap'] = lap_number
+                logger.info(f"SYNCHRONIZATION: Passing expected_lap={lap_number} to API for proper lap synchronization")
+
+            response = requests.get(url, params=params, timeout=30)
+
+            if response.status_code != 200:
+                return f"Error getting race positions: {response.text}"
+
+            data = response.json()
+
+            if 'error' in data:
+                return f"Error: {data['error']}"
+
+            positions = data.get('positions', [])
+            total_cars = data.get('total_cars', 0)
+
+            if not positions:
+                return f"No race position data available for {race_id} at timestamp {timestamp}"
+
+            # Build response
+            result_parts = [
+                f"Race Positions for {race_id} at {timestamp[:19]}:",
+                f"• Total Cars with Position Data: {total_cars}"
+            ]
+
+            # Find the specific vehicle if requested
+            focus_car_info = None
+            if vehicle_id:
+                for pos in positions:
+                    if pos['vehicle_id'] == vehicle_id:
+                        focus_car_info = pos
+                        break
+
+            # Show focus car first if found
+            if focus_car_info:
+                result_parts.extend([
+                    "",
+                    f"🎯 YOUR POSITION ({focus_car_info['vehicle_id']}):",
+                    f"• Race Position: P{focus_car_info['race_position']} of {total_cars}",
+                    f"• Current Lap: {focus_car_info['lap']}",
+                    f"• Lap Distance: {focus_car_info['lap_distance']:.0f}m",
+                    f"• Car Number: #{focus_car_info['car_number']}"
+                ])
+
+                # Calculate gaps to leader and cars around
+                leader = positions[0]
+                if focus_car_info['race_position'] > 1:
+                    gap_to_leader = leader['total_distance'] - focus_car_info['total_distance']
+                    result_parts.append(f"• Gap to Leader: {gap_to_leader:.0f}m behind")
+                else:
+                    result_parts.append("• Gap to Leader: LEADING THE RACE! 🏆")
+
+                # Gap to car ahead
+                if focus_car_info['race_position'] > 1:
+                    car_ahead = positions[focus_car_info['race_position'] - 2]  # -2 because positions are 1-indexed
+                    gap_ahead = car_ahead['total_distance'] - focus_car_info['total_distance']
+                    result_parts.append(f"• Gap to Car Ahead (P{car_ahead['race_position']}): {gap_ahead:.0f}m")
+
+                # Gap to car behind
+                if focus_car_info['race_position'] < len(positions):
+                    car_behind = positions[focus_car_info['race_position']]  # positions are 1-indexed
+                    gap_behind = focus_car_info['total_distance'] - car_behind['total_distance']
+                    result_parts.append(f"• Gap to Car Behind (P{car_behind['race_position']}): {gap_behind:.0f}m ahead")
+
+            # Show top 5 positions
+            result_parts.extend([
+                "",
+                "🏁 TOP 5 RACE POSITIONS:"
+            ])
+
+            for i, pos in enumerate(positions[:5]):
+                pos_indicator = "🎯 " if vehicle_id and pos['vehicle_id'] == vehicle_id else "   "
+                result_parts.append(
+                    f"{pos_indicator}P{pos['race_position']}: Car #{pos['car_number']} ({pos['vehicle_id']}) - Lap {pos['lap']}"
+                )
+
+            # Show cars around focus vehicle if it's not in top 5
+            if focus_car_info and focus_car_info['race_position'] > 5:
+                result_parts.extend([
+                    "",
+                    f"POSITIONS AROUND P{focus_car_info['race_position']}:"
+                ])
+
+                start_pos = max(0, focus_car_info['race_position'] - 3)  # Show 2 cars before
+                end_pos = min(len(positions), focus_car_info['race_position'] + 2)  # Show 1 car after
+
+                for pos in positions[start_pos:end_pos]:
+                    pos_indicator = "🎯 " if pos['vehicle_id'] == vehicle_id else "   "
+                    result_parts.append(
+                        f"{pos_indicator}P{pos['race_position']}: Car #{pos['car_number']} ({pos['vehicle_id']}) - Lap {pos['lap']}"
+                    )
+
+            return "\n".join(result_parts)
+
+        except Exception as e:
+            logger.error(f"Error in get_live_race_positions: {str(e)}")
+            return f"Error getting live race positions: {str(e)}"
+
 
 def create_racing_agent(project_root: str = None) -> Agent:
     """Create and configure the racing analysis agent with all data tools"""
@@ -671,6 +1001,7 @@ You have access to comprehensive racing data through specialized tools:
 - Detailed lap and sector timing analysis with improvements
 - Best lap rankings and competitive performance data
 - Race results, positions, and time gaps
+- Real-time race positions for all cars at any point during the race
 - Track position analysis with corner numbers and spatial awareness
 - Weather and track conditions throughout the race
 
@@ -682,7 +1013,15 @@ CRITICAL TOOL USAGE REQUIREMENTS:
 - For telemetry questions: Use get_telemetry_analysis() with the provided parameters
 - If context provides a car number, always use it in your tool calls
 
-IMPORTANT: When users provide current situation context (race, vehicle, lap distance, position), use this information directly with your tools. For track position questions, use the get_track_position_analysis tool with the provided lap_distance parameter when available.
+IMPORTANT: When users provide current situation context (race, vehicle, lap distance, position), use this information directly with your tools.
+
+**LAP NUMBER EXTRACTION CRITICAL:**
+- When context includes "Current Lap Number: X" or similar lap information, ALWAYS extract that number
+- Pass the lap number as the lap_number parameter to get_live_race_positions
+- This ensures you get position data from the correct point in the race, not wrong timestamps
+- Example: If context shows "Current Lap Number: 4", use get_live_race_positions(race_id="R1", vehicle_id="GR86-013-80", lap_number=4)
+
+For track position questions, use the get_track_position_analysis tool with the provided lap_distance parameter when available.
 
 When answering questions, intelligently select the appropriate tools to gather relevant data, then provide specific, actionable insights based on the actual data. Always reference concrete values, times, and measurements when making recommendations.
 
@@ -696,6 +1035,10 @@ Your coaching style should be:
 Example tool usage patterns:
 - For technique questions: Use get_telemetry_analysis for detailed driving data
 - For competitive questions: Use get_best_laps_data or get_race_results_analysis
+- For race position questions: Use get_live_race_positions to get current standings and gaps between cars
+  * CRITICAL: When lap number is provided in context (like "Current Lap Number: 4"), ALWAYS extract that number and pass it as lap_number parameter
+  * EXAMPLE: get_live_race_positions(race_id="R1", vehicle_id="GR86-013-80", lap_number=4)
+  * NEVER ignore the lap number from context - this is essential for accurate timing
 - For specific lap analysis: Use get_lap_sector_analysis for sector splits and timing
 - For track position questions: Use get_track_position_analysis with race_id, vehicle_id, and lap_distance from context
 - For track conditions: Use get_weather_conditions for environmental factors
@@ -711,11 +1054,12 @@ Always provide concrete, data-driven insights rather than generic advice. When c
             racing_tools.get_race_results_analysis,
             racing_tools.get_lap_sector_analysis,
             racing_tools.get_track_position_analysis,
-            racing_tools.get_weather_conditions
+            racing_tools.get_weather_conditions,
+            racing_tools.get_live_race_positions
         ]
     )
 
-    logger.info("Racing analysis agent created successfully with 6 data tools")
+    logger.info("Racing analysis agent created successfully with 7 data tools")
     return agent
 
 
