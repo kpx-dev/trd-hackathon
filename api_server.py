@@ -9,13 +9,17 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import pandas as pd
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil import parser as dateparser
 import json
 from functools import lru_cache
 import logging
 import asyncio
-from ai_assistant import get_racing_ai
+import boto3
+import requests
+from botocore.exceptions import NoCredentialsError, ClientError, NoRegionError
+# from ai_assistant import get_racing_ai  # Disabled - using Strands agent instead
+from racing_agent import get_racing_agent
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for browser requests
@@ -49,6 +53,53 @@ BEST_LAPS_FILES = {
     'R1': f"{DATA_DIR}/99_Best 10 Laps By Driver_Race 1_Anonymized.CSV",
     'R2': f"{DATA_DIR}/99_Best 10 Laps By Driver_Race 2_Anonymized.CSV"
 }
+
+# AWS region and account detection
+def get_aws_region_and_account():
+    """
+    Auto-detect the current AWS region and account number using boto3.
+
+    Returns:
+        tuple: (region, account_id, error_message) where error_message is None on success
+    """
+    try:
+        # Try to get region from boto3 session
+        session = boto3.Session()
+        region = session.region_name
+
+        # If no region found in session, try to get from EC2 metadata (if running on EC2)
+        if not region:
+            try:
+                # This will work if running on EC2 instance
+                import requests
+                response = requests.get(
+                    'http://169.254.169.254/latest/meta-data/placement/region',
+                    timeout=2
+                )
+                if response.status_code == 200:
+                    region = response.text.strip()
+            except:
+                pass
+
+        # If still no region, try to get from environment or default
+        if not region:
+            region = os.environ.get('AWS_DEFAULT_REGION', 'us-west-2')
+
+        # Get account ID using STS
+        account_id = None
+        try:
+            sts_client = boto3.client('sts', region_name=region)
+            identity = sts_client.get_caller_identity()
+            account_id = identity.get('Account', 'Unknown')
+        except (NoCredentialsError, ClientError) as e:
+            logger.warning(f"Could not get AWS account ID: {e}")
+            account_id = 'No credentials configured'
+
+        return region, account_id, None
+
+    except Exception as e:
+        logger.error(f"Error detecting AWS region and account: {e}")
+        return 'us-west-2', 'Detection failed', str(e)
 
 # Cache for loaded data (in production, would use Redis or similar)
 telemetry_cache = {}
@@ -566,42 +617,66 @@ def get_lap_data(race_id, vehicle_id):
 
 @app.route('/api/ai/regions', methods=['GET'])
 def get_aws_regions():
-    """Get list of supported AWS regions for Bedrock"""
-    # Common AWS regions that support Bedrock
-    regions = [
-        {'id': 'us-east-1', 'name': 'US East (N. Virginia)'},
-        {'id': 'us-west-2', 'name': 'US West (Oregon)'},
-        {'id': 'us-west-1', 'name': 'US West (N. California)'},
-        {'id': 'eu-west-1', 'name': 'Europe (Ireland)'},
-        {'id': 'eu-central-1', 'name': 'Europe (Frankfurt)'},
-        {'id': 'ap-northeast-1', 'name': 'Asia Pacific (Tokyo)'},
-        {'id': 'ap-southeast-1', 'name': 'Asia Pacific (Singapore)'},
-        {'id': 'ap-southeast-2', 'name': 'Asia Pacific (Sydney)'}
-    ]
+    """Get auto-detected AWS region and account information"""
+    # Auto-detect current AWS region and account
+    detected_region, account_id, error = get_aws_region_and_account()
+
+    # Region name mappings
+    region_names = {
+        'us-east-1': 'US East (N. Virginia)',
+        'us-west-2': 'US West (Oregon)',
+        'us-west-1': 'US West (N. California)',
+        'eu-west-1': 'Europe (Ireland)',
+        'eu-central-1': 'Europe (Frankfurt)',
+        'ap-northeast-1': 'Asia Pacific (Tokyo)',
+        'ap-southeast-1': 'Asia Pacific (Singapore)',
+        'ap-southeast-2': 'Asia Pacific (Sydney)'
+    }
+
+    detected_region_name = region_names.get(detected_region, detected_region)
 
     return jsonify({
-        'regions': regions,
-        'default': 'us-west-2'
+        'auto_detected': {
+            'region': detected_region,
+            'region_name': detected_region_name,
+            'account_id': account_id,
+            'detection_error': error
+        },
+        'status': 'auto_detected' if not error else 'fallback_used'
     })
 
 @app.route('/api/ai/test-connection', methods=['POST'])
 def test_ai_connection():
-    """Test connection to Amazon Bedrock"""
+    """Test connection to Strands Racing Agent"""
     try:
         data = request.get_json() or {}
-        region = data.get('region', 'us-west-2')
 
-        # Get AI assistant and test connection
-        ai_assistant = get_racing_ai(region)
-        result = ai_assistant.test_connection(region)
+        # Test Strands agent connection
+        racing_agent = get_racing_agent()
+
+        # Simple test question to verify agent is working
+        test_result = racing_agent("Who had the fastest lap in R1?")
+
+        # Extract text from AgentResult object
+        if test_result and hasattr(test_result, 'message') and 'content' in test_result.message:
+            test_text = test_result.message['content'][0]['text']
+        else:
+            test_text = str(test_result) if test_result else "No response"
+
+        result = {
+            'success': True,
+            'message': 'Successfully connected to Strands Racing Agent',
+            'agent_type': 'strands_racing_agent',
+            'test_response': test_text[:100] + "..." if len(test_text) > 100 else test_text
+        }
 
         return jsonify(result)
 
     except Exception as e:
-        logger.error(f"Error testing AI connection: {str(e)}")
+        logger.error(f"Error testing Strands agent connection: {str(e)}")
         return jsonify({
             'success': False,
-            'message': f'Connection test failed: {str(e)}',
+            'message': f'Strands agent connection test failed: {str(e)}',
             'error': str(e)
         }), 500
 
@@ -759,9 +834,35 @@ def aggregate_telemetry_context(race_id, vehicle_id, lap_number=None, time_range
             'error': f'Failed to aggregate context: {str(e)}'
         }
 
+@app.route('/api/ai/reset-agent', methods=['POST'])
+def reset_racing_agent():
+    """Reset the racing agent to clear its memory"""
+    try:
+        global racing_agent_instance
+
+        # Force recreation of the agent to clear memory
+        racing_agent_instance = None
+
+        # Get fresh agent instance (this clears memory)
+        racing_agent = get_racing_agent()
+
+        logger.info("Racing agent memory reset successfully")
+
+        return jsonify({
+            'success': True,
+            'message': 'Racing agent memory has been reset'
+        })
+
+    except Exception as e:
+        logger.error(f"Error resetting racing agent: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Failed to reset agent: {str(e)}'
+        }), 500
+
 @app.route('/api/ai/analyze', methods=['POST'])
 def analyze_racing_question():
-    """Analyze racing question with telemetry context using AI"""
+    """Analyze racing question using Strands Racing Agent"""
     try:
         # Parse request data
         data = request.get_json()
@@ -778,33 +879,97 @@ def analyze_racing_question():
         if not race_id or not vehicle_id:
             return jsonify({'error': 'race_id and vehicle_id are required'}), 400
 
-        # Optional fields
+        # Optional fields (keeping for backwards compatibility but not used by Strands agent)
         region = data.get('region', 'us-west-2')
         lap_number = data.get('lap_number')
         time_range = data.get('time_range')  # {start_time, end_time}
 
-        logger.info(f"AI analysis request: {race_id}/{vehicle_id}, lap={lap_number}, region={region}")
+        logger.info(f"Strands agent analysis request: {race_id}/{vehicle_id}, lap={lap_number}")
 
-        # Aggregate telemetry context
-        telemetry_context = aggregate_telemetry_context(
-            race_id=race_id,
-            vehicle_id=vehicle_id,
-            lap_number=lap_number,
-            time_range=time_range
-        )
+        # Get racing agent
+        racing_agent = get_racing_agent()
 
-        # Get AI assistant and analyze
-        ai_assistant = get_racing_ai(region)
+        # Extract additional context for track position awareness
+        current_lap_distance = data.get('current_lap_distance')
+        current_telemetry = data.get('current_telemetry', {})
 
-        # Since we're in a Flask route, we need to run the async function
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(
-                ai_assistant.analyze_racing_question(question, telemetry_context, region)
-            )
-        finally:
-            loop.close()
+        # Enhance the question with structured context for the Strands agent
+        enhanced_question = question
+
+        # Extract car number from vehicle ID for tool usage
+        car_number = None
+        if '-' in vehicle_id:
+            parts = vehicle_id.split('-')
+            if len(parts) >= 3:
+                try:
+                    car_number = int(parts[-1])
+                except ValueError:
+                    pass
+
+        # Always provide race and vehicle context to the agent
+        context_info = [
+            f"\n\nCurrent situation context:",
+            f"- Race: {race_id}",
+            f"- Vehicle: {vehicle_id}",
+            f"- Car Number: {car_number}" if car_number else f"- Car Number: Unable to extract from {vehicle_id}"
+        ]
+
+        # Add position and telemetry context if available
+        if current_lap_distance and current_telemetry:
+            context_info.extend([
+                f"- Lap Distance: {current_lap_distance}m into the current lap"
+            ])
+
+            if current_telemetry.get('lap'):
+                context_info.append(f"- Current Lap Number: {current_telemetry['lap']}")
+            if current_telemetry.get('speed'):
+                context_info.append(f"- Current Speed: {current_telemetry['speed']}mph")
+            if current_telemetry.get('gear'):
+                context_info.append(f"- Current Gear: {current_telemetry['gear']}")
+            if current_telemetry.get('engine_rpm'):
+                context_info.append(f"- Engine RPM: {current_telemetry['engine_rpm']}")
+            if current_telemetry.get('throttle') is not None:
+                context_info.append(f"- Throttle Position: {current_telemetry['throttle']:.1f}%")
+            if current_telemetry.get('brake_rear'):
+                context_info.append(f"- Brake Pressure: {current_telemetry['brake_rear']:.1f}psi")
+            if current_telemetry.get('latitude') and current_telemetry.get('longitude'):
+                context_info.append(f"- GPS Position: {current_telemetry['latitude']:.6f}, {current_telemetry['longitude']:.6f}")
+        elif lap_number:
+            # Use lap_number from original request if available
+            context_info.append(f"- Lap Number: {lap_number}")
+
+        # Always add context to the question
+        enhanced_question += "\n".join(context_info)
+
+        # Add explicit tool usage guidance for performance comparison questions
+        if car_number and any(keyword in question.lower() for keyword in ['best lap', 'sector', 'compare', 'performance', 'timing']):
+            enhanced_question += f"\n\nIMPORTANT: To answer this question properly, you should use your tools:"
+            enhanced_question += f"\n- Use get_best_laps_data(race_id='{race_id}', car_number={car_number}) to get best lap information"
+            enhanced_question += f"\n- Use get_lap_sector_analysis(race_id='{race_id}', car_number={car_number}) to get detailed sector timing data"
+            enhanced_question += f"\n- Extract specific sector performance data to make accurate comparisons"
+
+        # Use Strands agent to analyze the question
+        # The agent will automatically select the appropriate tools based on the question
+        agent_result = racing_agent(enhanced_question)
+
+        # Extract text from AgentResult object
+        if agent_result and hasattr(agent_result, 'message') and 'content' in agent_result.message:
+            result_text = agent_result.message['content'][0]['text']
+        else:
+            result_text = str(agent_result) if agent_result else "No response generated"
+
+        # Format response to match expected API structure
+        result = {
+            'success': True,
+            'response': result_text,
+            'metadata': {
+                'agent_type': 'strands_racing_agent',
+                'race_id': race_id,
+                'vehicle_id': vehicle_id,
+                'lap_number': lap_number,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+        }
 
         # Add request context to response
         result['request_context'] = {
@@ -812,13 +977,13 @@ def analyze_racing_question():
             'vehicle_id': vehicle_id,
             'lap_number': lap_number,
             'question': question,
-            'region': region
+            'region': region  # Keep for backwards compatibility
         }
 
         return jsonify(result)
 
     except Exception as e:
-        logger.error(f"Error in AI analysis: {str(e)}")
+        logger.error(f"Error in Strands agent analysis: {str(e)}")
         return jsonify({
             'success': False,
             'error': f'Analysis failed: {str(e)}',

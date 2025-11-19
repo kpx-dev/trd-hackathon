@@ -1,1 +1,0 @@
-"""Test suite for Toyota GR Cup Analytics package."""

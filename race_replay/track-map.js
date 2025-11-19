@@ -100,6 +100,9 @@ class ApiTrackMapViewer {
         // Disable Race Time controls initially (no car loaded)
         this.disableRaceTimeControls();
 
+        // Disable AI controls initially (no car loaded)
+        this.disableAIControls();
+
         console.log("🗺️ About to load track map...");
         this.loadTrackMap();
         console.log("🗺️ Track map loading initiated");
@@ -352,6 +355,9 @@ class ApiTrackMapViewer {
         // Disable Race Time controls during race change
         this.disableRaceTimeControls();
 
+        // Disable AI controls during race change
+        this.disableAIControls();
+
         const carDropdown = document.getElementById('car-dropdown');
         if (carDropdown) {
             carDropdown.innerHTML = '<option value="">Loading cars...</option>';
@@ -395,6 +401,9 @@ class ApiTrackMapViewer {
         // Disable Race Time controls during loading
         this.disableRaceTimeControls();
 
+        // Disable AI controls during loading
+        this.disableAIControls();
+
         this.showStatusMessage(`Loading data for ${this.selectedCar}...`);
 
         try {
@@ -416,6 +425,9 @@ class ApiTrackMapViewer {
             // Re-enable Race Time controls after loading is complete
             this.enableRaceTimeControls();
 
+            // Re-enable AI controls after GPS trace is fully loaded
+            this.enableAIControls();
+
             // Update AI context after successful car selection
             this.updateAIContextInfo();
 
@@ -423,8 +435,11 @@ class ApiTrackMapViewer {
             this.showError(`Failed to load data for ${this.selectedCar}`);
             this.hideStatusMessage();
 
-            // Re-enable controls even on error
+            // Re-enable race time controls even on error (for basic functionality)
             this.enableRaceTimeControls();
+
+            // Keep AI controls disabled on error (no GPS trace loaded)
+            // this.enableAIControls(); // Intentionally commented out
 
             // Update AI context even on error
             this.updateAIContextInfo();
@@ -722,7 +737,7 @@ class ApiTrackMapViewer {
     loadTrackMap() {
         const img = new Image();
         const timestamp = new Date().getTime();
-        const imageUrl = `race_maps/barber motorsports park.png?t=${timestamp}`;
+        const imageUrl = `race_maps/barber with numbering.png?t=${timestamp}`;
 
         img.onload = () => {
             this.imageWidth = img.width;
@@ -736,7 +751,7 @@ class ApiTrackMapViewer {
                 .attr("y", 0);
 
             this.fitToScreen();
-            this.drawStartFinishLine();
+            // this.drawStartFinishLine(); // Commented out - start/finish line is already in the numbered track map image
 
             console.log(`✅ Track map loaded: ${this.imageWidth}x${this.imageHeight}`);
         };
@@ -810,8 +825,13 @@ class ApiTrackMapViewer {
         const calibratedX = (rotatedX + 0.5) * 0.92 + 0.04;
         const calibratedY = (rotatedY + 0.5) * 0.92 + 0.04;
 
-        const mapX = calibratedX * this.imageWidth;
-        const mapY = (1 - calibratedY) * this.imageHeight;
+        // Apply offset adjustments to better align GPS trace with numbered track map
+        // Move GPS trace left (negative X) and up (negative Y)
+        const offsetX = 0; // Move left by 5 more pixels (was 5, now 0)
+        const offsetY = -20; // Move up by 5 more pixels (was -15, now -20)
+
+        const mapX = calibratedX * this.imageWidth + offsetX;
+        const mapY = (1 - calibratedY) * this.imageHeight + offsetY;
 
         if (mapX >= -200 && mapX <= this.imageWidth + 200 && mapY >= -200 && mapY <= this.imageHeight + 200) {
             return { x: mapX, y: mapY };
@@ -1338,6 +1358,24 @@ class ApiTrackMapViewer {
         }
     }
 
+    disableAIControls() {
+        const questionInput = document.getElementById('ai-question-input');
+        const sendButton = document.getElementById('ai-send-btn');
+
+        if (questionInput) {
+            questionInput.disabled = true;
+            questionInput.style.opacity = '0.5';
+            questionInput.style.cursor = 'not-allowed';
+            questionInput.placeholder = 'Please select a car and wait for GPS trace to load...';
+        }
+
+        if (sendButton) {
+            sendButton.disabled = true;
+            sendButton.style.opacity = '0.5';
+            sendButton.style.cursor = 'not-allowed';
+        }
+    }
+
     enableRaceTimeControls() {
         const timeSlider = document.getElementById('time-slider');
         const playPauseButton = document.getElementById('play-pause-button');
@@ -1376,6 +1414,21 @@ class ApiTrackMapViewer {
         }
     }
 
+    enableAIControls() {
+        const questionInput = document.getElementById('ai-question-input');
+        const sendButton = document.getElementById('ai-send-btn');
+
+        if (questionInput) {
+            questionInput.disabled = false;
+            questionInput.style.opacity = '1';
+            questionInput.style.cursor = 'text';
+            questionInput.placeholder = 'Ask me about your racing performance, technique, or track position...';
+        }
+
+        // Re-enable send button based on current state
+        this.updateSendButtonState();
+    }
+
     toggleSpeedUnit() {
         this.speedUnit = this.speedUnit === 'mph' ? 'kph' : 'mph';
 
@@ -1394,21 +1447,19 @@ class ApiTrackMapViewer {
     setupAIAssistant() {
         console.log('🤖 Setting up AI Assistant...');
 
-        // Setup region selector
-        const regionSelect = document.getElementById('ai-region-select');
-        if (regionSelect) {
-            regionSelect.addEventListener('change', (event) => {
-                this.aiRegion = event.target.value;
-                console.log(`🌍 AI region changed to: ${this.aiRegion}`);
-                this.updateAIStatus('Region changed. Testing connection...');
-                this.testAIConnection();
-            });
-        }
+        // Auto-detect AWS region and account on initialization
+        this.loadAWSRegionInfo();
 
         // Setup send button
         const sendButton = document.getElementById('ai-send-btn');
         if (sendButton) {
             sendButton.addEventListener('click', () => this.sendAIQuestion());
+        }
+
+        // Setup reset button
+        const resetButton = document.getElementById('ai-reset-btn');
+        if (resetButton) {
+            resetButton.addEventListener('click', () => this.resetConversation());
         }
 
         // Setup input field
@@ -1429,8 +1480,36 @@ class ApiTrackMapViewer {
             });
         }
 
+        // Clear any previous chat messages on page load
+        this.clearChatMessages();
+
         // Test initial connection
         this.testAIConnection();
+    }
+
+    async loadAWSRegionInfo() {
+        console.log('🌍 Loading AWS region information...');
+
+        try {
+            const response = await fetch(`${this.baseUrl}/ai/regions`);
+            const result = await response.json();
+
+            if (result.auto_detected) {
+                this.aiRegion = result.auto_detected.region;
+                console.log(`✅ Auto-detected AWS region: ${result.auto_detected.region_name} (${this.aiRegion})`);
+                console.log(`📋 AWS Account ID: ${result.auto_detected.account_id}`);
+
+                // Update status to show detected information
+                const statusMsg = `Using ${result.auto_detected.region_name} (Account: ${result.auto_detected.account_id})`;
+                this.updateAIStatus(statusMsg, result.status === 'auto_detected' ? 'connected' : 'error');
+            } else {
+                console.warn('⚠️ Could not auto-detect AWS region, using default');
+                this.updateAIStatus('Using default region (us-west-2)', 'error');
+            }
+        } catch (error) {
+            console.error('❌ Error loading AWS region info:', error);
+            this.updateAIStatus('Region detection failed, using default', 'error');
+        }
     }
 
     async testAIConnection() {
@@ -1451,7 +1530,7 @@ class ApiTrackMapViewer {
 
             if (result.success) {
                 this.aiConnected = true;
-                this.updateAIStatus(`Connected to ${result.region}`, 'connected');
+                this.updateAIStatus('Connected to Agent', 'connected');
                 console.log('✅ AI connection successful:', result.message);
             } else {
                 this.aiConnected = false;
@@ -1504,16 +1583,47 @@ class ApiTrackMapViewer {
         try {
             console.log(`🧠 Sending AI question: "${question}"`);
 
-            // Get current lap number from UI or current position
+            // Get current context from the interface
             const currentLap = this.getCurrentLapNumber();
+            const currentPosition = this.currentPosition;
+            const currentDataPoint = await this.getDataAtPosition(currentPosition);
 
+            // Build enhanced request data with current position context
             const requestData = {
                 question: question,
                 race_id: this.selectedRace,
                 vehicle_id: this.selectedCar,
                 region: this.aiRegion,
-                lap_number: currentLap
+                lap_number: currentLap,
+                current_position: currentPosition,
+                current_lap_distance: currentDataPoint ? currentDataPoint.lap_distance : null,
+                current_telemetry: currentDataPoint ? {
+                    latitude: currentDataPoint.latitude,
+                    longitude: currentDataPoint.longitude,
+                    speed: currentDataPoint.speed,
+                    gear: currentDataPoint.gear,
+                    throttle: currentDataPoint.throttle,
+                    brake_rear: currentDataPoint.brake_rear,
+                    brake_front: currentDataPoint.brake_front,
+                    engine_rpm: currentDataPoint.engine_rpm,
+                    steering_angle: currentDataPoint.steering_angle,
+                    g_force_x: currentDataPoint.g_force_x,
+                    g_force_y: currentDataPoint.g_force_y,
+                    lap_distance: currentDataPoint.lap_distance,
+                    lap: currentDataPoint.lap
+                } : null
             };
+
+            // Enhance the question with context for better agent understanding
+            const contextualQuestion = `Current situation: I am in ${this.selectedRace} driving vehicle ${this.selectedCar}` +
+                (currentLap ? `, currently on lap ${currentLap}` : '') +
+                (currentDataPoint && currentDataPoint.lap_distance ? `, at position ${currentDataPoint.lap_distance.toFixed(0)}m into the lap` : '') +
+                `. My question: ${question}`;
+
+            // Update the question with context
+            requestData.question = contextualQuestion;
+
+            console.log(`🎯 Enhanced question with context:`, requestData);
 
             const response = await fetch(`${this.baseUrl}/ai/analyze`, {
                 method: 'POST',
@@ -1661,6 +1771,58 @@ class ApiTrackMapViewer {
             if (messageElement) {
                 messageElement.remove();
             }
+        }
+    }
+
+    clearChatMessages() {
+        const messagesContainer = document.getElementById('ai-messages');
+        if (messagesContainer) {
+            // Clear all messages except the initial greeting
+            messagesContainer.innerHTML = `
+                <div class="ai-message assistant">
+                    <div class="message-content">Hi! I'm your AI racing coach. I can analyze your telemetry data and provide specific advice to improve your lap times.
+
+Try asking questions like:
+• "What could I have done better on this lap?"
+• "Why was I slower in sector 2?"
+• "Compare my braking points to optimal"
+• "How can I improve my cornering technique?"
+
+Select a car and lap, then ask me anything!</div>
+                </div>
+            `;
+        }
+    }
+
+    async resetConversation() {
+        console.log('🔄 Resetting conversation and agent memory...');
+
+        // Clear chat messages
+        this.clearChatMessages();
+
+        // Reset agent memory by creating a new agent instance on the backend
+        try {
+            const response = await fetch(`${this.baseUrl}/ai/reset-agent`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    race_id: this.selectedRace,
+                    vehicle_id: this.selectedCar
+                })
+            });
+
+            if (response.ok) {
+                console.log('✅ Agent memory reset successful');
+                this.addAIMessage('Conversation reset. How can I help you analyze your racing performance?', 'assistant');
+            } else {
+                console.warn('⚠️ Agent reset endpoint not available, cleared chat only');
+                this.addAIMessage('Chat cleared. Note: Agent memory persists until page refresh.', 'assistant');
+            }
+        } catch (error) {
+            console.warn('⚠️ Agent reset not available:', error.message);
+            this.addAIMessage('Chat cleared. Note: Agent memory persists until page refresh.', 'assistant');
         }
     }
 }

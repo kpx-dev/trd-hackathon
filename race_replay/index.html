@@ -74,12 +74,12 @@
 
         .main-content {
             display: flex;
-            gap: 20px;
+            gap: 15px;
             margin-bottom: 15px;
         }
 
         .left-controls {
-            width: 320px;
+            width: 380px;
             flex-shrink: 0;
             display: flex;
             flex-direction: column;
@@ -108,12 +108,12 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            max-width: calc(100vw - 660px);
-            min-width: 600px;
+            max-width: calc(100vw - 680px);
+            min-width: 550px;
         }
 
         .telemetry-sidebar {
-            width: 280px;
+            width: 260px;
             flex-shrink: 0;
             background-color: #f8f9fa;
             border: 2px solid #ddd;
@@ -177,7 +177,7 @@
             border: 2px solid #4285f4;
             border-radius: 8px;
             padding: 15px;
-            min-height: 300px;
+            min-height: 400px;
             display: flex;
             flex-direction: column;
         }
@@ -218,24 +218,6 @@
             color: #c62828;
         }
 
-        .ai-region-selector {
-            margin-bottom: 10px;
-        }
-
-        .ai-region-selector label {
-            font-size: 12px;
-            color: #555;
-            display: block;
-            margin-bottom: 3px;
-        }
-
-        .ai-region-selector select {
-            width: 100%;
-            padding: 4px 8px;
-            font-size: 12px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
 
         .ai-chat-container {
             flex: 1;
@@ -251,7 +233,7 @@
             padding: 10px;
             background-color: white;
             overflow-y: auto;
-            max-height: 180px;
+            max-height: 260px;
             margin-bottom: 10px;
             font-size: 13px;
             line-height: 1.4;
@@ -352,6 +334,35 @@
             background-color: #f8f9fa;
             border-radius: 4px;
             text-align: center;
+        }
+
+        .ai-reset-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 5px;
+            transition: background-color 0.2s ease;
+        }
+
+        .ai-reset-btn:hover:not(:disabled) {
+            background-color: #c82333;
+        }
+
+        .ai-reset-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .ai-header-controls {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
         }
 
         .telemetry-value {
@@ -696,27 +707,16 @@
 
                 <!-- AI Racing Assistant -->
                 <div class="ai-assistant-panel">
-                    <div class="ai-title">
-                        <span class="ai-emoji">🤖</span>
-                        AI Racing Coach
+                    <div class="ai-header-controls">
+                        <div class="ai-title">
+                            <span class="ai-emoji">🤖</span>
+                            AI Racing Coach
+                        </div>
+                        <button id="ai-reset-btn" class="ai-reset-btn" title="Reset conversation and clear agent memory">🔄 Reset</button>
                     </div>
 
                     <div class="ai-status" id="ai-status">
                         Initializing AI assistant...
-                    </div>
-
-                    <div class="ai-region-selector">
-                        <label for="ai-region-select">AWS Region:</label>
-                        <select id="ai-region-select">
-                            <option value="us-west-2">US West (Oregon)</option>
-                            <option value="us-east-1">US East (N. Virginia)</option>
-                            <option value="us-west-1">US West (N. California)</option>
-                            <option value="eu-west-1">Europe (Ireland)</option>
-                            <option value="eu-central-1">Europe (Frankfurt)</option>
-                            <option value="ap-northeast-1">Asia Pacific (Tokyo)</option>
-                            <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
-                            <option value="ap-southeast-2">Asia Pacific (Sydney)</option>
-                        </select>
                     </div>
 
                     <div class="ai-context-info" id="ai-context-info">
