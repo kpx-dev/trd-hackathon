@@ -404,14 +404,20 @@ class ApiTrackMapViewer {
         // Disable AI controls during loading
         this.disableAIControls();
 
-        this.showStatusMessage(`Loading data for ${this.selectedCar}...`);
+        this.showEnhancedLoadingMessage(`Loading telemetry data for ${this.selectedCar}...`);
 
         try {
             await this.loadCarTimeline(this.selectedCar);
             this.updateTimeline();
 
+            // Update progress
+            this.showEnhancedLoadingMessage(`Processing lap data for ${this.selectedCar}...`);
+
             // Load initial chunk and show first position
             await this.updateCarPosition(0);
+
+            // Update progress
+            this.showEnhancedLoadingMessage(`Drawing GPS track for ${this.selectedCar}...`);
 
             // Draw GPS trace for the selected car
             await this.drawGPSTrace();
@@ -420,7 +426,7 @@ class ApiTrackMapViewer {
             this.populateLapDropdown();
 
             // Hide loading message after GPS trace is complete
-            this.hideStatusMessage();
+            this.hideEnhancedLoadingMessage();
 
             // Re-enable Race Time controls after loading is complete
             this.enableRaceTimeControls();
@@ -433,7 +439,7 @@ class ApiTrackMapViewer {
 
         } catch (error) {
             this.showError(`Failed to load data for ${this.selectedCar}`);
-            this.hideStatusMessage();
+            this.hideEnhancedLoadingMessage();
 
             // Re-enable race time controls even on error (for basic functionality)
             this.enableRaceTimeControls();
@@ -1320,6 +1326,53 @@ class ApiTrackMapViewer {
         this.showStatusMessage(message, true);
     }
 
+    showEnhancedLoadingMessage(message) {
+        console.log('🔄 Showing enhanced loading message:', message);
+
+        // Remove any existing loading overlay
+        this.hideEnhancedLoadingMessage();
+
+        // Get the map container element
+        const mapContainer = document.getElementById('main-map-container');
+        if (!mapContainer) return;
+
+        // Create loading overlay
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'loading-overlay';
+        loadingOverlay.id = 'enhanced-loading-overlay';
+
+        // Create loading message with spinner
+        const loadingMessageDiv = document.createElement('div');
+        loadingMessageDiv.className = 'loading-message';
+
+        // Create spinner
+        const spinner = document.createElement('div');
+        spinner.className = 'loading-spinner';
+
+        // Create text
+        const messageText = document.createElement('span');
+        messageText.textContent = message;
+
+        // Assemble the loading message
+        loadingMessageDiv.appendChild(spinner);
+        loadingMessageDiv.appendChild(messageText);
+        loadingOverlay.appendChild(loadingMessageDiv);
+
+        // Position the overlay relative to the map container
+        mapContainer.style.position = 'relative';
+        mapContainer.appendChild(loadingOverlay);
+
+        console.log('✅ Enhanced loading message displayed');
+    }
+
+    hideEnhancedLoadingMessage() {
+        const existingOverlay = document.getElementById('enhanced-loading-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+            console.log('✅ Enhanced loading message hidden');
+        }
+    }
+
     disableRaceTimeControls() {
         const timeSlider = document.getElementById('time-slider');
         const playPauseButton = document.getElementById('play-pause-button');
@@ -1460,6 +1513,12 @@ class ApiTrackMapViewer {
         const resetButton = document.getElementById('ai-reset-btn');
         if (resetButton) {
             resetButton.addEventListener('click', () => this.resetConversation());
+        }
+
+        // Setup copy button
+        const copyButton = document.getElementById('ai-copy-btn');
+        if (copyButton) {
+            copyButton.addEventListener('click', () => this.copyConversation());
         }
 
         // Setup expand button
@@ -1688,16 +1747,24 @@ class ApiTrackMapViewer {
     }
 
     updateAIStatus(message, type = 'default') {
-        const statusElement = document.getElementById('ai-status');
-        if (statusElement) {
-            statusElement.textContent = message;
-
+        const connectionElement = document.getElementById('ai-connection-status');
+        if (connectionElement) {
             // Remove existing status classes
-            statusElement.classList.remove('connected', 'error');
+            connectionElement.classList.remove('connecting', 'connected', 'error');
 
-            // Add new status class
-            if (type !== 'default') {
-                statusElement.classList.add(type);
+            // Update emoji and tooltip based on connection state
+            if (type === 'connected') {
+                connectionElement.textContent = '✅';
+                connectionElement.title = message;
+                connectionElement.classList.add('connected');
+            } else if (type === 'error') {
+                connectionElement.textContent = '❌';
+                connectionElement.title = `Connection failed: ${message}`;
+                connectionElement.classList.add('error');
+            } else {
+                connectionElement.textContent = '🔄';
+                connectionElement.title = message;
+                connectionElement.classList.add('connecting');
             }
         }
     }
@@ -1715,7 +1782,7 @@ class ApiTrackMapViewer {
             const carNumber = carParts.length >= 3 ? carParts[2] : this.selectedCar;
             const currentLap = this.getCurrentLapNumber();
 
-            contextText = `Car #${carNumber}, ${this.selectedRace}`;
+            contextText = `Context: Car #${carNumber}, ${this.selectedRace}`;
             if (currentLap) {
                 contextText += `, Lap ${currentLap}`;
             }
@@ -1736,8 +1803,10 @@ class ApiTrackMapViewer {
 
             if (this.aiMessaging) {
                 sendButton.innerHTML = '<span class="ai-loading"></span>Analyzing...';
+                sendButton.classList.add('analyzing');
             } else {
                 sendButton.textContent = 'Send';
+                sendButton.classList.remove('analyzing');
             }
         }
     }
@@ -1758,7 +1827,19 @@ class ApiTrackMapViewer {
 
         const contentSpan = document.createElement('div');
         contentSpan.className = 'message-content';
-        contentSpan.textContent = content;
+
+        // Use markdown rendering for assistant messages, plain text for user messages
+        if (type === 'assistant' && typeof marked !== 'undefined') {
+            // Configure marked for safe rendering
+            marked.setOptions({
+                breaks: true,
+                gfm: true,
+                sanitize: false // We trust our own AI responses
+            });
+            contentSpan.innerHTML = marked.parse(content);
+        } else {
+            contentSpan.textContent = content;
+        }
 
         messageDiv.appendChild(timeSpan);
         messageDiv.appendChild(contentSpan);
@@ -1783,20 +1864,41 @@ class ApiTrackMapViewer {
     clearChatMessages() {
         const messagesContainer = document.getElementById('ai-messages');
         if (messagesContainer) {
-            // Clear all messages except the initial greeting
-            messagesContainer.innerHTML = `
-                <div class="ai-message assistant">
-                    <div class="message-content">Hi! I'm your AI racing coach. I can analyze your telemetry data and provide specific advice to improve your lap times.
+            // Clear all messages and add initial greeting with markdown support
+            messagesContainer.innerHTML = '';
 
-Try asking questions like:
-• "What could I have done better on this lap?"
-• "Why was I slower in sector 2?"
-• "Compare my braking points to optimal"
-• "How can I improve my cornering technique?"
+            const welcomeMessage = `## Welcome to your AI Racing Coach! 🏁
 
-Select a car and lap, then ask me anything!</div>
-                </div>
-            `;
+I can analyze your **telemetry data** and provide specific advice to improve your lap times.
+
+### Try asking questions like:
+- *"What could I have done better on this lap?"*
+- *"Why was I slower in sector 2?"*
+- *"Compare my braking points to optimal"*
+- *"How can I improve my cornering technique?"*
+
+**Select a car and lap, then ask me anything!**`;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'ai-message assistant';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+
+            // Use markdown rendering for the welcome message
+            if (typeof marked !== 'undefined') {
+                marked.setOptions({
+                    breaks: true,
+                    gfm: true,
+                    sanitize: false
+                });
+                contentDiv.innerHTML = marked.parse(welcomeMessage);
+            } else {
+                contentDiv.textContent = welcomeMessage;
+            }
+
+            messageDiv.appendChild(contentDiv);
+            messagesContainer.appendChild(messageDiv);
         }
     }
 
@@ -1900,6 +2002,140 @@ Select a car and lap, then ask me anything!</div>
             });
 
             console.log('✅ AI Coach expanded to full screen');
+        }
+    }
+
+    copyConversation() {
+        console.log('📋 Copying AI conversation to clipboard...');
+
+        const messagesContainer = document.getElementById('ai-messages');
+        if (!messagesContainer) {
+            console.warn('⚠️ AI messages container not found');
+            return;
+        }
+
+        // Extract all messages and format them as plain text
+        const messages = messagesContainer.querySelectorAll('.ai-message');
+        let conversationText = 'AI Racing Coach Conversation\n';
+        conversationText += '=' .repeat(40) + '\n\n';
+
+        // Add context info
+        const contextElement = document.getElementById('ai-context-info');
+        if (contextElement && contextElement.textContent.trim()) {
+            conversationText += `${contextElement.textContent.trim()}\n`;
+            conversationText += '-'.repeat(40) + '\n\n';
+        }
+
+        messages.forEach((message, index) => {
+            const timeElement = message.querySelector('.message-time');
+            const contentElement = message.querySelector('.message-content');
+
+            if (contentElement) {
+                // Determine message type
+                const isUser = message.classList.contains('user');
+                const isError = message.classList.contains('error');
+                const messageType = isError ? 'ERROR' : (isUser ? 'USER' : 'AI COACH');
+
+                // Add timestamp if available
+                let timestamp = '';
+                if (timeElement && timeElement.textContent.trim()) {
+                    timestamp = ` (${timeElement.textContent.trim()})`;
+                }
+
+                // Add message header
+                conversationText += `[${messageType}]${timestamp}:\n`;
+
+                // Extract plain text content (remove HTML formatting)
+                let messageText = contentElement.textContent || contentElement.innerText || '';
+
+                // Clean up extra whitespace and format
+                messageText = messageText.trim();
+                if (messageText) {
+                    // Add indentation for readability
+                    const indentedText = messageText.split('\n').map(line => `  ${line}`).join('\n');
+                    conversationText += `${indentedText}\n\n`;
+                }
+            }
+        });
+
+        // Add footer
+        conversationText += '-'.repeat(40) + '\n';
+        conversationText += `Exported on: ${new Date().toLocaleString()}\n`;
+        conversationText += `Total Messages: ${messages.length}\n`;
+
+        // Copy to clipboard
+        const copyButton = document.getElementById('ai-copy-btn');
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            // Modern clipboard API
+            navigator.clipboard.writeText(conversationText)
+                .then(() => {
+                    console.log('✅ Conversation copied to clipboard successfully');
+                    this.showCopySuccess(copyButton);
+                })
+                .catch(err => {
+                    console.error('❌ Failed to copy conversation:', err);
+                    this.fallbackCopyToClipboard(conversationText, copyButton);
+                });
+        } else {
+            // Fallback for older browsers
+            this.fallbackCopyToClipboard(conversationText, copyButton);
+        }
+    }
+
+    fallbackCopyToClipboard(text, button) {
+        // Create a temporary textarea element
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+
+        document.body.appendChild(textarea);
+
+        try {
+            textarea.select();
+            textarea.setSelectionRange(0, 99999); // For mobile devices
+
+            const successful = document.execCommand('copy');
+            if (successful) {
+                console.log('✅ Conversation copied to clipboard (fallback method)');
+                this.showCopySuccess(button);
+            } else {
+                console.error('❌ Fallback copy method failed');
+                this.showCopyError(button);
+            }
+        } catch (err) {
+            console.error('❌ Fallback copy failed:', err);
+            this.showCopyError(button);
+        } finally {
+            document.body.removeChild(textarea);
+        }
+    }
+
+    showCopySuccess(button) {
+        if (button) {
+            const originalText = button.textContent;
+            button.textContent = '✅ Copied!';
+            button.classList.add('copied');
+
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.classList.remove('copied');
+            }, 2000);
+        }
+    }
+
+    showCopyError(button) {
+        if (button) {
+            const originalText = button.textContent;
+            button.textContent = '❌ Failed';
+            button.style.backgroundColor = '#dc3545';
+
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.style.backgroundColor = '';
+            }, 2000);
         }
     }
 }

@@ -679,6 +679,106 @@ class RacingDataTools:
         return None
 
     @tool
+    def get_individual_lap_times(self, race_id: str, car_number: int) -> str:
+        """Get individual lap times for a specific car in chronological order.
+
+        Use this for questions about:
+        - "List my lap times for this race"
+        - "Which lap was my fastest/slowest?"
+        - "What were my lap times throughout the race?"
+        - "How did my lap times compare from start to finish?"
+        - "Show me all my lap times"
+
+        Args:
+            race_id: Race identifier (R1, R2)
+            car_number: Car number to analyze
+        """
+        try:
+            filename = f"23_AnalysisEnduranceWithSections_Race {race_id[-1]}_Anonymized.CSV"
+            df = self._load_csv(filename)
+
+            car_data = df[df['NUMBER'] == car_number]
+            if len(car_data) == 0:
+                # Provide helpful context about what data is available
+                available_cars = sorted(df['NUMBER'].unique().tolist())
+
+                result_parts = [
+                    f"Car #{car_number} is not included in the detailed lap timing data for {race_id}.",
+                    f"This car may not have been part of the official timing analysis.",
+                    "",
+                    f"Cars with detailed lap timing data: {', '.join(['#' + str(c) for c in available_cars[:10]])}{'...' if len(available_cars) > 10 else ''}",
+                ]
+                return "\n".join(result_parts)
+
+            # Sort by lap number to show chronological progression
+            sorted_laps = car_data.sort_values('LAP_NUMBER')
+
+            # Parse lap times to find fastest and slowest
+            lap_times_seconds = []
+            for _, lap in sorted_laps.iterrows():
+                lap_time_str = lap['LAP_TIME']
+                if pd.notna(lap_time_str):
+                    seconds = self._parse_lap_time_to_seconds(lap_time_str)
+                    if seconds != float('inf'):
+                        lap_times_seconds.append((lap['LAP_NUMBER'], seconds, lap_time_str))
+
+            if not lap_times_seconds:
+                return f"No valid lap times found for car #{car_number} in {race_id}"
+
+            # Find fastest and slowest laps
+            fastest_lap = min(lap_times_seconds, key=lambda x: x[1])
+            slowest_lap = max(lap_times_seconds, key=lambda x: x[1])
+
+            result_parts = [
+                f"Car #{car_number} Lap Times for {race_id}:",
+                f"• Total Laps Completed: {len(lap_times_seconds)}",
+                f"• Fastest Lap: Lap {fastest_lap[0]} - {fastest_lap[2]}",
+                f"• Slowest Lap: Lap {slowest_lap[0]} - {slowest_lap[2]}",
+                "",
+                "• Individual Lap Times:"
+            ]
+
+            # List all lap times chronologically
+            for _, lap in sorted_laps.iterrows():
+                lap_num = lap['LAP_NUMBER']
+                lap_time = lap['LAP_TIME']
+
+                # Mark fastest and slowest laps
+                marker = ""
+                if pd.notna(lap_time):
+                    lap_seconds = self._parse_lap_time_to_seconds(lap_time)
+                    if lap_seconds != float('inf'):
+                        if lap_num == fastest_lap[0]:
+                            marker = " 🏆 (Fastest)"
+                        elif lap_num == slowest_lap[0]:
+                            marker = " 🐌 (Slowest)"
+
+                if pd.notna(lap_time):
+                    result_parts.append(f"  Lap {lap_num:2d}: {lap_time}{marker}")
+                else:
+                    result_parts.append(f"  Lap {lap_num:2d}: --:--:--- (Invalid)")
+
+            # Calculate some statistics
+            if len(lap_times_seconds) > 1:
+                valid_times = [x[1] for x in lap_times_seconds]
+                avg_time = sum(valid_times) / len(valid_times)
+                avg_minutes = int(avg_time // 60)
+                avg_seconds = avg_time % 60
+
+                result_parts.extend([
+                    "",
+                    f"• Average Lap Time: {avg_minutes}:{avg_seconds:06.3f}",
+                    f"• Time Range: {fastest_lap[2]} to {slowest_lap[2]}",
+                    f"• Difference: {slowest_lap[1] - fastest_lap[1]:.3f} seconds"
+                ])
+
+            return "\n".join(result_parts)
+
+        except Exception as e:
+            logger.error(f"Error in get_individual_lap_times: {str(e)}")
+            return f"Error loading lap times: {str(e)}"
+
+    @tool
     def get_live_race_positions(self, race_id: str, timestamp: str = None, vehicle_id: str = None, lap_number: int = None) -> str:
         """Get real-time race positions for all cars at a specific time during the race.
 
@@ -1048,6 +1148,7 @@ Always provide concrete, data-driven insights rather than generic advice. When c
     agent = Agent(
         name="racing_analyst",
         system_prompt=system_prompt,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Use Claude Sonnet 4.5 inference profile
         tools=[
             racing_tools.get_telemetry_analysis,
             racing_tools.get_best_laps_data,
@@ -1055,11 +1156,12 @@ Always provide concrete, data-driven insights rather than generic advice. When c
             racing_tools.get_lap_sector_analysis,
             racing_tools.get_track_position_analysis,
             racing_tools.get_weather_conditions,
-            racing_tools.get_live_race_positions
+            racing_tools.get_live_race_positions,
+            racing_tools.get_individual_lap_times
         ]
     )
 
-    logger.info("Racing analysis agent created successfully with 7 data tools")
+    logger.info("Racing analysis agent created successfully with 8 data tools")
     return agent
 
 
