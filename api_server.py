@@ -20,6 +20,7 @@ import requests
 from botocore.exceptions import NoCredentialsError, ClientError, NoRegionError
 # from ai_assistant import get_racing_ai  # Disabled - using Strands agent instead
 from racing_agent import get_racing_agent
+from telemetry_augmentation import TelemetryAugmenter
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for browser requests
@@ -53,6 +54,9 @@ BEST_LAPS_FILES = {
     'R1': f"{DATA_DIR}/99_Best 10 Laps By Driver_Race 1_Anonymized.CSV",
     'R2': f"{DATA_DIR}/99_Best 10 Laps By Driver_Race 2_Anonymized.CSV"
 }
+
+# Initialize telemetry augmentation system
+telemetry_augmenter = TelemetryAugmenter(DATA_DIR)
 
 # AWS region and account detection
 def get_aws_region_and_account():
@@ -182,6 +186,42 @@ def load_best_laps_data(race_id):
 
     return best_laps_cache[race_id]
 
+@lru_cache(maxsize=16)
+def load_augmented_telemetry_data(race_id, vehicle_id):
+    """Load and cache augmented telemetry data for a specific vehicle"""
+    logger.info(f"Loading augmented telemetry data for {vehicle_id} in {race_id}")
+
+    try:
+        # Use the global telemetry augmenter to get augmented data
+        augmented_result = telemetry_augmenter.augment_vehicle_data(race_id, vehicle_id)
+
+        if 'error' in augmented_result:
+            logger.warning(f"Augmentation failed for {vehicle_id}: {augmented_result['error']}")
+            return None
+
+        # Convert augmented data back to DataFrame format for compatibility
+        augmented_records = augmented_result.get('augmented_data', [])
+
+        if not augmented_records:
+            logger.warning(f"No augmented data available for {vehicle_id}")
+            return None
+
+        # Convert to DataFrame and ensure timestamp is datetime
+        df = pd.DataFrame(augmented_records)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
+
+        # Sort by timestamp for efficient time-based queries
+        df = df.sort_values('timestamp').reset_index(drop=True)
+
+        logger.info(f"Successfully loaded {len(df)} augmented records for {vehicle_id} " +
+                   f"({augmented_result['original_records']} original + {augmented_result['synthetic_records']} synthetic)")
+
+        return df
+
+    except Exception as e:
+        logger.error(f"Error loading augmented telemetry data for {vehicle_id}: {str(e)}")
+        return None
+
 def parse_lap_time(lap_time_str):
     """Parse lap time string like '1:39.387' to milliseconds"""
     if not lap_time_str or pd.isna(lap_time_str):
@@ -310,13 +350,26 @@ def get_telemetry_chunk(race_id, vehicle_id):
         start_time = request.args.get('start_time')
         end_time = request.args.get('end_time')
         chunk_size = int(request.args.get('chunk_size', 60))  # seconds
+        use_augmented = request.args.get('augmented', 'false').lower() == 'true'
 
-        telemetry_data = load_telemetry_data(race_id)
+        # Load augmented data if requested, otherwise use original data
+        if use_augmented:
+            logger.info(f"Loading augmented telemetry data for {vehicle_id}")
+            vehicle_data = load_augmented_telemetry_data(race_id, vehicle_id)
 
-        if vehicle_id not in telemetry_data:
-            return jsonify({'error': 'Vehicle not found'}), 404
-
-        vehicle_data = telemetry_data[vehicle_id]
+            if vehicle_data is None:
+                # Fallback to original data if augmentation fails
+                logger.warning(f"Augmentation failed for {vehicle_id}, falling back to original data")
+                telemetry_data = load_telemetry_data(race_id)
+                if vehicle_id not in telemetry_data:
+                    return jsonify({'error': 'Vehicle not found'}), 404
+                vehicle_data = telemetry_data[vehicle_id]
+                use_augmented = False
+        else:
+            telemetry_data = load_telemetry_data(race_id)
+            if vehicle_id not in telemetry_data:
+                return jsonify({'error': 'Vehicle not found'}), 404
+            vehicle_data = telemetry_data[vehicle_id]
 
         # Filter by time range if provided
         logger.info(f"Original data size: {len(vehicle_data)}")
@@ -373,7 +426,8 @@ def get_telemetry_chunk(race_id, vehicle_id):
             'end_time': end_time,
             'chunk_size': chunk_size,
             'data': chunk_data,
-            'total_points': len(chunk_data)
+            'total_points': len(chunk_data),
+            'augmented': use_augmented
         })
 
     except Exception as e:
@@ -440,6 +494,47 @@ def get_position_at_time(race_id, vehicle_id):
     except Exception as e:
         logger.error(f"Error getting position: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/telemetry/<race_id>/<vehicle_id>/augmented', methods=['GET'])
+def get_augmented_telemetry_info(race_id, vehicle_id):
+    """Get information about the augmented telemetry data for a vehicle"""
+    try:
+        logger.info(f"Getting augmented telemetry info for {vehicle_id} in {race_id}")
+
+        # Run augmentation and get results
+        augmented_result = telemetry_augmenter.augment_vehicle_data(race_id, vehicle_id)
+
+        if 'error' in augmented_result:
+            return jsonify({
+                'race_id': race_id,
+                'vehicle_id': vehicle_id,
+                'error': augmented_result['error'],
+                'augmentation_available': False
+            }), 400
+
+        # Return augmentation statistics and information
+        return jsonify({
+            'race_id': race_id,
+            'vehicle_id': vehicle_id,
+            'augmentation_available': True,
+            'original_records': augmented_result['original_records'],
+            'synthetic_records': augmented_result['synthetic_records'],
+            'detected_crossings': augmented_result['detected_crossings'],
+            'aligned_crossings': augmented_result['aligned_crossings'],
+            'crossing_details': augmented_result.get('crossing_details', []),
+            'total_records': augmented_result['original_records'] + augmented_result['synthetic_records'],
+            'augmentation_ratio': round((augmented_result['synthetic_records'] /
+                                      (augmented_result['original_records'] + augmented_result['synthetic_records'])) * 100, 2)
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting augmented telemetry info: {str(e)}")
+        return jsonify({
+            'race_id': race_id,
+            'vehicle_id': vehicle_id,
+            'error': str(e),
+            'augmentation_available': False
+        }), 500
 
 @app.route('/api/race/<race_id>/positions', methods=['GET'])
 def get_race_positions_at_time(race_id):

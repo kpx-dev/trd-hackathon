@@ -2507,7 +2507,7 @@ Please format this as a comprehensive competitive analysis report with clear sec
     }
 
     async generatePDF(reportName, content, reportType) {
-        console.log('📄 Generating PDF:', reportName);
+        console.log('📄 Generating professional PDF:', reportName);
 
         try {
             // Check if jsPDF is available
@@ -2518,112 +2518,608 @@ Please format this as a comprehensive competitive analysis report with clear sec
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
 
-            // PDF configuration
+            // PDF configuration with professional styling
             const pageWidth = doc.internal.pageSize.getWidth();
             const pageHeight = doc.internal.pageSize.getHeight();
             const margin = 20;
             const maxWidth = pageWidth - 2 * margin;
             let currentY = margin;
 
-            // Helper function to add text with word wrapping and proper spacing
-            const addText = (text, fontSize = 10, isBold = false, isItalic = false, marginBottom = 3) => {
+            // Color scheme for professional look
+            const colors = {
+                primary: [0, 123, 255],     // Blue
+                secondary: [108, 117, 125], // Gray
+                success: [40, 167, 69],     // Green
+                danger: [220, 53, 69],      // Red
+                warning: [255, 193, 7],     // Yellow
+                dark: [33, 37, 41],         // Dark gray
+                light: [248, 249, 250]     // Light gray
+            };
+
+            // Enhanced helper function for professional text rendering
+            const addText = (text, options = {}) => {
+                const defaults = {
+                    fontSize: 10,
+                    isBold: false,
+                    isItalic: false,
+                    color: colors.dark,
+                    marginBottom: 1,  // Reduced from 2 to 1
+                    alignment: 'left',
+                    indent: 0,
+                    background: null,
+                    border: false
+                };
+
+                const opts = { ...defaults, ...options };
+
                 if (!text || text.trim() === '') {
-                    currentY += marginBottom;
+                    currentY += opts.marginBottom;
                     return;
                 }
 
-                doc.setFontSize(fontSize);
-                doc.setFont('helvetica', isBold ? 'bold' : (isItalic ? 'italic' : 'normal'));
+                // Set font properties
+                doc.setFontSize(opts.fontSize);
+                doc.setFont('helvetica', opts.isBold ? 'bold' : (opts.isItalic ? 'italic' : 'normal'));
+                doc.setTextColor(opts.color[0], opts.color[1], opts.color[2]);
 
-                // Clean the text thoroughly for jsPDF
+                // Clean and prepare text
                 const cleanedText = this.sanitizeTextForPDF(text);
-                const lines = doc.splitTextToSize(cleanedText, maxWidth);
-                const lineHeight = fontSize * 0.6;
+                const availableWidth = maxWidth - opts.indent;
+
+                // Ensure text wrapping works properly - splitTextToSize should handle this
+                // but we verify the width is reasonable
+                const lines = doc.splitTextToSize(cleanedText, availableWidth);
+                const lineHeight = opts.fontSize * 0.85;  // Use 0.85 to match jsPDF lineHeightFactor
+
+                // Extra safety check: if a line is still too long, force split it
+                // This shouldn't happen but protects against edge cases
+                const maxLineChars = Math.floor(availableWidth / (opts.fontSize * 0.5));
+                const wrappedLines = [];
+                for (let line of lines) {
+                    if (line.length > maxLineChars * 1.2) {
+                        // Line might be too long, manually split it
+                        const words = line.split(' ');
+                        let currentLine = '';
+                        for (let word of words) {
+                            const testLine = currentLine ? currentLine + ' ' + word : word;
+                            if (testLine.length > maxLineChars) {
+                                if (currentLine) wrappedLines.push(currentLine);
+                                currentLine = word;
+                            } else {
+                                currentLine = testLine;
+                            }
+                        }
+                        if (currentLine) wrappedLines.push(currentLine);
+                    } else {
+                        wrappedLines.push(line);
+                    }
+                }
+                const finalLines = wrappedLines.length > 0 ? wrappedLines : lines;
 
                 // Check if we need a new page
-                if (currentY + (lines.length * lineHeight) + marginBottom > pageHeight - margin) {
+                if (currentY + (finalLines.length * lineHeight) + opts.marginBottom > pageHeight - margin) {
                     doc.addPage();
                     currentY = margin;
+                    // Add AI robot icon to new pages (REMOVED per user request)
+                    // this.addAIRobotIcon(doc, margin, currentY - 15);
                 }
 
-                doc.text(lines, margin, currentY);
-                currentY += lines.length * lineHeight + marginBottom;
+                // Calculate padding for backgrounds
+                const topPadding = 3;
+                const bottomPadding = 3;
+                const sidePadding = 3;
+
+                // Add background if specified
+                if (opts.background) {
+                    doc.setFillColor(opts.background[0], opts.background[1], opts.background[2]);
+                    const boxHeight = finalLines.length * lineHeight + topPadding + bottomPadding;
+                    doc.rect(margin + opts.indent, currentY, availableWidth, boxHeight, 'F');
+                }
+
+                // Add border if specified
+                if (opts.border) {
+                    doc.setDrawColor(colors.secondary[0], colors.secondary[1], colors.secondary[2]);
+                    doc.setLineWidth(0.5);
+                    const boxHeight = finalLines.length * lineHeight + topPadding + bottomPadding;
+                    doc.rect(margin + opts.indent, currentY, availableWidth, boxHeight);
+                }
+
+                // Add text with proper alignment and padding when background is present
+                // For text without background, we need to account for the first line height
+                const textYPos = currentY + (opts.background ? topPadding + lineHeight : lineHeight);
+                const xPos = opts.alignment === 'center' ? pageWidth / 2 :
+                           opts.alignment === 'right' ? pageWidth - margin :
+                           margin + opts.indent + (opts.background ? sidePadding : 0);
+
+                const textOptions = {
+                    lineHeightFactor: 0.85  // Tighter line spacing for multi-line text
+                };
+                if (opts.alignment === 'center') textOptions.align = 'center';
+                if (opts.alignment === 'right') textOptions.align = 'right';
+
+                doc.text(finalLines, xPos, textYPos, textOptions);
+
+                // Advance currentY by the box height plus margin
+                if (opts.background) {
+                    currentY += finalLines.length * lineHeight + topPadding + bottomPadding + opts.marginBottom;
+                } else {
+                    // For regular text, account for all lines plus margin
+                    currentY += (finalLines.length * lineHeight) + opts.marginBottom;
+                }
+
+                // Reset text color to default
+                doc.setTextColor(colors.dark[0], colors.dark[1], colors.dark[2]);
             };
 
-            // Add header
+            // Add professional header with AI robot icon
+            this.addProfessionalHeader(doc, margin, currentY, colors);
+            currentY += 50; // Space for header
+
             const carParts = this.selectedCar.split('-');
             const carNumber = carParts.length >= 3 ? carParts[2] : this.selectedCar;
             const currentLap = this.getCurrentLapNumber();
 
-            addText('AI Racing Coach Report', 18, true, false, 8);
-            addText(`Race: ${this.selectedRace} | Car: #${carNumber} | Lap: ${currentLap || 'Current'}`, 12, true, false, 5);
-            addText(`Generated: ${new Date().toLocaleString()}`, 10, false, true, 10);
+            // Report title section with styling
+            addText('Comprehensive Performance Analysis Report', {
+                fontSize: 16,
+                isBold: true,
+                color: colors.primary,
+                marginBottom: 2,  // Reduced from 4 to 2
+                alignment: 'center'
+            });
 
-            // Process the markdown content into structured elements
-            const structuredContent = this.parseMarkdownToStructure(content);
+            // Subtitle with context
+            addText(`Car #${carNumber} (${this.selectedCar}) - Race ${this.selectedRace}, Lap ${currentLap || 'Current'} Analysis`, {
+                fontSize: 14,
+                isBold: true,
+                color: colors.secondary,
+                marginBottom: 2,  // Reduced from 3 to 2
+                alignment: 'center'
+            });
 
-            // Render each structured element
+            // Generation timestamp
+            addText(`Generated: ${new Date().toLocaleString()}`, {
+                fontSize: 10,
+                isItalic: true,
+                color: colors.secondary,
+                marginBottom: 4,  // Reduced from 8 to 4
+                alignment: 'center'
+            });
+
+            // Add horizontal separator
+            this.addHorizontalSeparator(doc, margin, currentY - 5, maxWidth, colors.secondary);
+            currentY += 3;  // Reduced from 5 to 3
+
+            // Process and render markdown content with enhanced formatting
+            const structuredContent = this.parseMarkdownToStructureEnhanced(content);
+
             for (const element of structuredContent) {
                 switch (element.type) {
                     case 'heading1':
-                        addText(element.text, 16, true, false, 8);
+                        // Executive Summary style
+                        addText(element.text, {
+                            fontSize: 14,
+                            isBold: true,
+                            color: colors.primary,
+                            marginBottom: 2,  // Reduced from 4 to 2
+                            background: colors.light,
+                            border: true
+                        });
                         break;
                     case 'heading2':
-                        addText(element.text, 14, true, false, 6);
+                        addText(element.text, {
+                            fontSize: 12,
+                            isBold: true,
+                            color: colors.primary,
+                            marginBottom: 2  // Reduced from 3 to 2
+                        });
                         break;
                     case 'heading3':
-                        addText(element.text, 12, true, false, 5);
+                        addText(element.text, {
+                            fontSize: 11,
+                            isBold: true,
+                            color: colors.secondary,
+                            marginBottom: 2  // Reduced from 3 to 2
+                        });
                         break;
                     case 'paragraph':
-                        addText(element.text, 10, false, false, 6);
+                        addText(element.text, {
+                            fontSize: 10,
+                            marginBottom: 2  // Reduced from 3 to 2
+                        });
                         break;
                     case 'bullet':
-                        addText(`• ${element.text}`, 10, false, false, 3);
+                        addText(`• ${element.text}`, {
+                            fontSize: 10,
+                            indent: 10,
+                            marginBottom: 1  // Reduced from 2 to 1
+                        });
                         break;
                     case 'numbered':
-                        addText(element.text, 10, false, false, 3);
+                        addText(element.text, {
+                            fontSize: 10,
+                            indent: 10,
+                            marginBottom: 1  // Reduced from 2 to 1
+                        });
                         break;
-                    case 'bold':
-                        addText(element.text, 10, true, false, 6);
+                    case 'bold_paragraph':
+                        addText(element.text, {
+                            fontSize: 10,
+                            isBold: true,
+                            color: colors.dark,
+                            marginBottom: 2  // Reduced from 3 to 2
+                        });
                         break;
-                    case 'italic':
-                        addText(element.text, 10, false, true, 6);
+                    case 'italic_paragraph':
+                        addText(element.text, {
+                            fontSize: 10,
+                            isItalic: true,
+                            color: colors.secondary,
+                            marginBottom: 2  // Reduced from 3 to 2
+                        });
+                        break;
+                    case 'critical_finding':
+                        addText(element.text, {
+                            fontSize: 11,
+                            isBold: true,
+                            color: [255, 255, 255],
+                            background: colors.danger,
+                            marginBottom: 2,  // Reduced from 4 to 2
+                            border: true
+                        });
+                        break;
+                    case 'positive_finding':
+                        addText(element.text, {
+                            fontSize: 11,
+                            isBold: true,
+                            color: [255, 255, 255],
+                            background: colors.success,
+                            marginBottom: 2,  // Reduced from 4 to 2
+                            border: true
+                        });
                         break;
                     case 'quote':
-                        addText(`"${element.text}"`, 10, false, true, 6);
+                        addText(`"${element.text}"`, {
+                            fontSize: 10,
+                            isItalic: true,
+                            color: colors.secondary,
+                            indent: 15,
+                            marginBottom: 2  // Reduced from 3 to 2
+                        });
                         break;
                     case 'table':
-                        this.renderTableInPDF(doc, element, margin, maxWidth, currentY);
+                        this.renderTableInPDFEnhanced(doc, element, margin, maxWidth, currentY, colors);
                         currentY = this.currentTableY;
                         break;
+                    case 'separator':
+                        this.addHorizontalSeparator(doc, margin, currentY, maxWidth, colors.secondary);
+                        currentY += 5;  // Reduced from 10 to 5
+                        break;
                     case 'empty':
-                        addText('', 10, false, false, 8);
+                        currentY += 2;  // Reduced from 8 to 2 for minimal spacing
                         break;
                     default:
-                        addText(element.text, 10, false, false, 3);
+                        addText(element.text, {
+                            fontSize: 10,
+                            marginBottom: 3
+                        });
                 }
             }
 
-            // Add footer
+            // Add professional footer to all pages
             const totalPages = doc.internal.getNumberOfPages();
             for (let i = 1; i <= totalPages; i++) {
                 doc.setPage(i);
-                doc.setFontSize(8);
-                doc.setFont('helvetica', 'normal');
-                doc.text(`Page ${i} of ${totalPages} | Generated by AI Racing Coach`,
-                    pageWidth - margin, pageHeight - 10, { align: 'right' });
+                this.addProfessionalFooter(doc, i, totalPages, pageWidth, pageHeight, margin, colors);
             }
 
             // Save the PDF
             const fileName = `${reportName}.pdf`;
             doc.save(fileName);
 
-            console.log('✅ PDF generated and saved:', fileName);
+            console.log('✅ Professional PDF generated and saved:', fileName);
 
         } catch (error) {
             console.error('❌ PDF generation failed:', error);
             throw error;
         }
+    }
+
+    addAIRobotIcon(doc, x, y) {
+        // Use [AI] text since emojis don't render properly in PDF
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 123, 255); // Blue color
+        doc.text('[AI]', x, y + 12);
+
+        // Reset to default styling after icon
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(33, 37, 41); // Dark color
+    }
+
+    addProfessionalHeader(doc, margin, y, colors) {
+        // Header background
+        doc.setFillColor(colors.light[0], colors.light[1], colors.light[2]);
+        doc.rect(0, 0, doc.internal.pageSize.getWidth(), 40, 'F');
+
+        // Add border line
+        doc.setDrawColor(colors.primary[0], colors.primary[1], colors.primary[2]);
+        doc.setLineWidth(2);
+        doc.line(0, 40, doc.internal.pageSize.getWidth(), 40);
+
+        // Add AI robot icon (REMOVED per user request)
+        // this.addAIRobotIcon(doc, margin, y + 5);
+
+        // Add title next to icon
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(colors.primary[0], colors.primary[1], colors.primary[2]);
+        doc.text('AI Racing Coach Report', margin + 25, y + 15);
+
+        // Add subtitle
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(colors.secondary[0], colors.secondary[1], colors.secondary[2]);
+        doc.text('Professional Racing Performance Analysis', margin + 25, y + 25);
+    }
+
+    addHorizontalSeparator(doc, x, y, width, color) {
+        doc.setDrawColor(color[0], color[1], color[2]);
+        doc.setLineWidth(0.5);
+        doc.line(x, y, x + width, y);
+    }
+
+    addProfessionalFooter(doc, pageNum, totalPages, pageWidth, pageHeight, margin, colors) {
+        const footerY = pageHeight - 15;
+
+        // Footer background
+        doc.setFillColor(colors.light[0], colors.light[1], colors.light[2]);
+        doc.rect(0, pageHeight - 20, pageWidth, 20, 'F');
+
+        // Footer border
+        doc.setDrawColor(colors.secondary[0], colors.secondary[1], colors.secondary[2]);
+        doc.setLineWidth(0.5);
+        doc.line(0, pageHeight - 20, pageWidth, pageHeight - 20);
+
+        // Page number (left side)
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(colors.secondary[0], colors.secondary[1], colors.secondary[2]);
+        doc.text(`Page ${pageNum} of ${totalPages}`, margin, footerY);
+
+        // Generated by text (right side)
+        doc.text('Generated by AI Racing Coach', pageWidth - margin, footerY, { align: 'right' });
+
+        // Small robot icon in footer (REMOVED per user request)
+        // this.addAIRobotIcon(doc, pageWidth - margin - 40, footerY - 8);
+    }
+
+    parseMarkdownToStructureEnhanced(content) {
+        const lines = content.split('\n');
+        const elements = [];
+        let i = 0;
+
+        while (i < lines.length) {
+            let line = lines[i].trim();
+
+            if (!line) {
+                elements.push({ type: 'empty', text: '' });
+                i++;
+                continue;
+            }
+
+            // Horizontal separator (--- or ***)
+            if (/^[-*]{3,}$/.test(line)) {
+                elements.push({ type: 'separator', text: '' });
+                i++;
+                continue;
+            }
+
+            // Check for table
+            if (line.includes('|') && i + 1 < lines.length) {
+                const nextLine = lines[i + 1].trim();
+                if (nextLine.match(/^\|?[-:\s|]+\|?$/)) {
+                    const tableResult = this.parseTableFromLines(lines, i);
+                    elements.push(tableResult.element);
+                    i = tableResult.nextIndex;
+                    continue;
+                }
+            }
+
+            // Headers (check in order of specificity)
+            if (line.startsWith('### ')) {
+                elements.push({
+                    type: 'heading3',
+                    text: this.sanitizeTextForPDF(line.substring(4))
+                });
+            } else if (line.startsWith('## ')) {
+                elements.push({
+                    type: 'heading2',
+                    text: this.sanitizeTextForPDF(line.substring(3))
+                });
+            } else if (line.startsWith('# ')) {
+                elements.push({
+                    type: 'heading1',
+                    text: this.sanitizeTextForPDF(line.substring(2))
+                });
+            }
+            // Critical findings (special formatting for important issues)
+            else if (line.toLowerCase().includes('critical') && line.toLowerCase().includes('finding')) {
+                elements.push({
+                    type: 'critical_finding',
+                    text: this.removeInlineMarkdownAndSanitize(line)
+                });
+            }
+            // Positive findings (for achievements)
+            else if (line.toLowerCase().includes('excellent') || line.toLowerCase().includes('strong') ||
+                     line.toLowerCase().includes('good') || line.toLowerCase().includes('best')) {
+                elements.push({
+                    type: 'positive_finding',
+                    text: this.removeInlineMarkdownAndSanitize(line)
+                });
+            }
+            // Bullet points (handle various formats)
+            else if (/^[-*+]\s/.test(line)) {
+                elements.push({
+                    type: 'bullet',
+                    text: this.removeInlineMarkdownAndSanitize(line.substring(2))
+                });
+            }
+            // Numbered lists
+            else if (/^\d+\.\s/.test(line)) {
+                elements.push({
+                    type: 'numbered',
+                    text: this.removeInlineMarkdownAndSanitize(line)
+                });
+            }
+            // Blockquotes
+            else if (line.startsWith('> ')) {
+                elements.push({
+                    type: 'quote',
+                    text: this.removeInlineMarkdownAndSanitize(line.substring(2))
+                });
+            }
+            // Check if entire line is bold
+            else if (line.match(/^\*\*(.*)\*\*$/)) {
+                const match = line.match(/^\*\*(.*)\*\*$/);
+                elements.push({
+                    type: 'bold_paragraph',
+                    text: this.sanitizeTextForPDF(match[1])
+                });
+            }
+            // Check if entire line is italic
+            else if (line.match(/^\*(.*)\*$/) || line.match(/^_(.*)_$/)) {
+                const match = line.match(/^\*(.*)\*$/) || line.match(/^_(.*)_$/);
+                if (match) {
+                    elements.push({
+                        type: 'italic_paragraph',
+                        text: this.sanitizeTextForPDF(match[1])
+                    });
+                } else {
+                    elements.push({
+                        type: 'paragraph',
+                        text: this.removeInlineMarkdownAndSanitize(line)
+                    });
+                }
+            }
+            // Regular paragraph text (with inline markdown processing)
+            else {
+                // Check if line has inline formatting that should be preserved
+                if (line.includes('**') || line.includes('*')) {
+                    // Process inline formatting and add as regular paragraph
+                    elements.push({
+                        type: 'paragraph',
+                        text: this.processInlineFormattingForPDF(line)
+                    });
+                } else {
+                    elements.push({
+                        type: 'paragraph',
+                        text: this.sanitizeTextForPDF(line)
+                    });
+                }
+            }
+
+            i++;
+        }
+
+        return elements;
+    }
+
+    processInlineFormattingForPDF(text) {
+        // For now, simply remove markdown and sanitize since jsPDF doesn't support rich text easily
+        // In a more advanced implementation, you could split the text and apply different formatting
+        return this.removeInlineMarkdownAndSanitize(text);
+    }
+
+    renderTableInPDFEnhanced(doc, tableElement, margin, maxWidth, startY, colors) {
+        const pageHeight = doc.internal.pageSize.getHeight();
+        let currentY = startY;
+
+        const headers = tableElement.headers;
+        const rows = tableElement.rows;
+
+        if (!headers || headers.length === 0) {
+            this.currentTableY = currentY + 10;
+            return;
+        }
+
+        // Calculate column widths - distribute evenly
+        const colWidth = maxWidth / headers.length;
+        const rowHeight = 14;
+        const fontSize = 9;
+
+        // Check if table fits on current page
+        const tableHeight = (rows.length + 1) * rowHeight + 15;
+        if (currentY + tableHeight > pageHeight - margin) {
+            doc.addPage();
+            currentY = margin;
+            // this.addAIRobotIcon(doc, margin, currentY - 15);
+            currentY += 10;
+        }
+
+        doc.setFontSize(fontSize);
+
+        // Draw header row with professional styling
+        doc.setFillColor(colors.primary[0], colors.primary[1], colors.primary[2]);
+        doc.setDrawColor(colors.primary[0], colors.primary[1], colors.primary[2]);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(255, 255, 255);
+
+        for (let col = 0; col < headers.length; col++) {
+            const x = margin + (col * colWidth);
+            const headerText = headers[col] || '';
+
+            // Add colored header background
+            doc.rect(x, currentY, colWidth, rowHeight, 'FD');
+
+            // Add header text (center aligned)
+            const lines = doc.splitTextToSize(headerText, colWidth - 6);
+            const textY = currentY + rowHeight/2 + fontSize/3;
+            doc.text(lines[0] || '', x + colWidth/2, textY, { align: 'center' });
+        }
+        currentY += rowHeight;
+
+        // Draw data rows with alternating colors
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(colors.dark[0], colors.dark[1], colors.dark[2]);
+        doc.setDrawColor(colors.secondary[0], colors.secondary[1], colors.secondary[2]);
+
+        for (let row = 0; row < rows.length; row++) {
+            const rowData = rows[row];
+
+            // Check if we need a new page
+            if (currentY + rowHeight > pageHeight - margin) {
+                doc.addPage();
+                currentY = margin;
+                // this.addAIRobotIcon(doc, margin, currentY - 15);
+                currentY += 10;
+            }
+
+            // Alternating row colors for better readability
+            if (row % 2 === 1) {
+                doc.setFillColor(colors.light[0], colors.light[1], colors.light[2]);
+                doc.rect(margin, currentY, maxWidth, rowHeight, 'F');
+            }
+
+            for (let col = 0; col < headers.length; col++) {
+                const x = margin + (col * colWidth);
+                const cellText = (col < rowData.length) ? rowData[col] : '';
+
+                // Add cell border
+                doc.rect(x, currentY, colWidth, rowHeight, 'S');
+
+                // Add cell text
+                if (cellText) {
+                    const lines = doc.splitTextToSize(cellText, colWidth - 4);
+                    doc.text(lines[0] || '', x + 2, currentY + rowHeight/2 + fontSize/3);
+                }
+            }
+            currentY += rowHeight;
+        }
+
+        // Add spacing after table
+        this.currentTableY = currentY + 10;
     }
 
     parseMarkdownToStructure(content) {
