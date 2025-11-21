@@ -1414,6 +1414,10 @@ class ApiTrackMapViewer {
     disableAIControls() {
         const questionInput = document.getElementById('ai-question-input');
         const sendButton = document.getElementById('ai-send-btn');
+        const reportsButton = document.getElementById('ai-reports-btn');
+        const copyButton = document.getElementById('ai-copy-btn');
+        const expandButton = document.getElementById('ai-expand-btn');
+        const resetButton = document.getElementById('ai-reset-btn');
 
         if (questionInput) {
             questionInput.disabled = true;
@@ -1426,6 +1430,30 @@ class ApiTrackMapViewer {
             sendButton.disabled = true;
             sendButton.style.opacity = '0.5';
             sendButton.style.cursor = 'not-allowed';
+        }
+
+        if (reportsButton) {
+            reportsButton.disabled = true;
+            reportsButton.style.opacity = '0.5';
+            reportsButton.style.cursor = 'not-allowed';
+        }
+
+        if (copyButton) {
+            copyButton.disabled = true;
+            copyButton.style.opacity = '0.5';
+            copyButton.style.cursor = 'not-allowed';
+        }
+
+        if (expandButton) {
+            expandButton.disabled = true;
+            expandButton.style.opacity = '0.5';
+            expandButton.style.cursor = 'not-allowed';
+        }
+
+        if (resetButton) {
+            resetButton.disabled = true;
+            resetButton.style.opacity = '0.5';
+            resetButton.style.cursor = 'not-allowed';
         }
     }
 
@@ -1470,12 +1498,40 @@ class ApiTrackMapViewer {
     enableAIControls() {
         const questionInput = document.getElementById('ai-question-input');
         const sendButton = document.getElementById('ai-send-btn');
+        const reportsButton = document.getElementById('ai-reports-btn');
+        const copyButton = document.getElementById('ai-copy-btn');
+        const expandButton = document.getElementById('ai-expand-btn');
+        const resetButton = document.getElementById('ai-reset-btn');
 
         if (questionInput) {
             questionInput.disabled = false;
             questionInput.style.opacity = '1';
             questionInput.style.cursor = 'text';
             questionInput.placeholder = 'Ask me about your racing performance, technique, or track position...';
+        }
+
+        if (reportsButton) {
+            reportsButton.disabled = false;
+            reportsButton.style.opacity = '1';
+            reportsButton.style.cursor = 'pointer';
+        }
+
+        if (copyButton) {
+            copyButton.disabled = false;
+            copyButton.style.opacity = '1';
+            copyButton.style.cursor = 'pointer';
+        }
+
+        if (expandButton) {
+            expandButton.disabled = false;
+            expandButton.style.opacity = '1';
+            expandButton.style.cursor = 'pointer';
+        }
+
+        if (resetButton) {
+            resetButton.disabled = false;
+            resetButton.style.opacity = '1';
+            resetButton.style.cursor = 'pointer';
         }
 
         // Re-enable send button based on current state
@@ -1525,6 +1581,12 @@ class ApiTrackMapViewer {
         const expandButton = document.getElementById('ai-expand-btn');
         if (expandButton) {
             expandButton.addEventListener('click', () => this.toggleAIExpanded());
+        }
+
+        // Setup reports button
+        const reportsButton = document.getElementById('ai-reports-btn');
+        if (reportsButton) {
+            reportsButton.addEventListener('click', () => this.openReportsModal());
         }
 
         // Setup input field
@@ -2137,6 +2199,713 @@ I can analyze your **telemetry data** and provide specific advice to improve you
                 button.style.backgroundColor = '';
             }, 2000);
         }
+    }
+
+    // === Reports Modal Methods ===
+
+    openReportsModal() {
+        console.log('📊 Opening reports modal...');
+
+        if (!this.selectedCar) {
+            alert('Please select a car first to generate reports.');
+            return;
+        }
+
+        const modal = document.getElementById('reports-modal');
+        if (!modal) {
+            console.error('Reports modal not found');
+            return;
+        }
+
+        // Update context information
+        this.updateReportsContext();
+
+        // Setup modal event listeners
+        this.setupReportsModal();
+
+        // Show the modal
+        modal.style.display = 'block';
+
+        // Focus on report type selector
+        setTimeout(() => {
+            const reportTypeSelect = document.getElementById('report-type-select');
+            if (reportTypeSelect) {
+                reportTypeSelect.focus();
+            }
+        }, 100);
+    }
+
+    setupReportsModal() {
+        const modal = document.getElementById('reports-modal');
+        const closeBtn = document.getElementById('close-reports-modal');
+        const cancelBtn = document.getElementById('cancel-report-btn');
+        const generateBtn = document.getElementById('generate-report-btn');
+        const reportTypeSelect = document.getElementById('report-type-select');
+        const reportNameInput = document.getElementById('report-name-input');
+
+        // Close modal handlers
+        const closeModal = () => {
+            modal.style.display = 'none';
+            this.resetReportsForm();
+        };
+
+        if (closeBtn) {
+            closeBtn.onclick = closeModal;
+        }
+
+        if (cancelBtn) {
+            cancelBtn.onclick = closeModal;
+        }
+
+        // Click outside modal to close
+        modal.onclick = (event) => {
+            if (event.target === modal) {
+                closeModal();
+            }
+        };
+
+        // Report type selection handler
+        if (reportTypeSelect) {
+            reportTypeSelect.addEventListener('change', () => {
+                const selectedType = reportTypeSelect.value;
+                this.updateGenerateButtonState();
+
+                // Auto-populate report name based on selection with full context
+                if (reportNameInput && selectedType) {
+                    if (!reportNameInput.value.trim()) {
+                        const defaultName = this.getDefaultReportName(selectedType);
+                        reportNameInput.value = defaultName;
+                    }
+                }
+            });
+        }
+
+        // Generate report handler
+        if (generateBtn) {
+            generateBtn.onclick = () => this.generateReport();
+        }
+    }
+
+    updateReportsContext() {
+        const contextDetails = document.getElementById('reports-context-details');
+        if (!contextDetails) return;
+
+        if (!this.selectedCar) {
+            contextDetails.textContent = 'Please select a car and lap to generate reports';
+            return;
+        }
+
+        const carParts = this.selectedCar.split('-');
+        const carNumber = carParts.length >= 3 ? carParts[2] : this.selectedCar;
+        const currentLap = this.getCurrentLapNumber();
+
+        let contextText = `Race: ${this.selectedRace} | Car: #${carNumber}`;
+
+        if (currentLap) {
+            contextText += ` | Current Lap: ${currentLap}`;
+        }
+
+        if (this.currentPosition >= 0 && this.timelineData.length > 0) {
+            const progress = ((this.currentPosition / this.timelineData.length) * 100).toFixed(1);
+            contextText += ` | Race Progress: ${progress}%`;
+        }
+
+        contextDetails.textContent = contextText;
+    }
+
+    updateGenerateButtonState() {
+        const generateBtn = document.getElementById('generate-report-btn');
+        const reportTypeSelect = document.getElementById('report-type-select');
+
+        if (!generateBtn || !reportTypeSelect) return;
+
+        const hasSelection = reportTypeSelect.value.trim() !== '';
+        const hasCarSelected = this.selectedCar !== null;
+
+        generateBtn.disabled = !hasSelection || !hasCarSelected;
+    }
+
+    resetReportsForm() {
+        const reportTypeSelect = document.getElementById('report-type-select');
+        const reportNameInput = document.getElementById('report-name-input');
+        const generateBtn = document.getElementById('generate-report-btn');
+
+        if (reportTypeSelect) {
+            reportTypeSelect.value = '';
+        }
+
+        if (reportNameInput) {
+            reportNameInput.value = '';
+        }
+
+        if (generateBtn) {
+            generateBtn.disabled = true;
+            generateBtn.classList.remove('generating');
+        }
+    }
+
+    async generateReport() {
+        console.log('📊 Generating report...');
+
+        const reportTypeSelect = document.getElementById('report-type-select');
+        const reportNameInput = document.getElementById('report-name-input');
+        const generateBtn = document.getElementById('generate-report-btn');
+
+        if (!reportTypeSelect || !reportNameInput || !generateBtn) {
+            console.error('Report form elements not found');
+            return;
+        }
+
+        const reportType = reportTypeSelect.value;
+        const customReportName = reportNameInput.value.trim();
+
+        if (!reportType) {
+            alert('Please select a report type.');
+            return;
+        }
+
+        if (!this.selectedCar) {
+            alert('Please select a car first.');
+            return;
+        }
+
+        // Set loading state
+        generateBtn.disabled = true;
+        generateBtn.classList.add('generating');
+
+        try {
+            // Generate the appropriate prompt for the AI agent
+            const currentLap = this.getCurrentLapNumber();
+            const reportPrompt = this.buildReportPrompt(reportType, currentLap);
+
+            console.log('🧠 Sending report request to AI agent:', reportPrompt);
+
+            // Get current context
+            const currentDataPoint = await this.getDataAtPosition(this.currentPosition);
+
+            // Build enhanced request data
+            const requestData = {
+                question: reportPrompt,
+                race_id: this.selectedRace,
+                vehicle_id: this.selectedCar,
+                region: this.aiRegion,
+                lap_number: currentLap,
+                current_position: this.currentPosition,
+                current_lap_distance: currentDataPoint ? currentDataPoint.lap_distance : null,
+                current_telemetry: currentDataPoint ? {
+                    latitude: currentDataPoint.latitude,
+                    longitude: currentDataPoint.longitude,
+                    speed: currentDataPoint.speed,
+                    gear: currentDataPoint.gear,
+                    throttle: currentDataPoint.throttle,
+                    brake_rear: currentDataPoint.brake_rear,
+                    brake_front: currentDataPoint.brake_front,
+                    engine_rpm: currentDataPoint.engine_rpm,
+                    steering_angle: currentDataPoint.steering_angle,
+                    g_force_x: currentDataPoint.g_force_x,
+                    g_force_y: currentDataPoint.g_force_y,
+                    lap_distance: currentDataPoint.lap_distance,
+                    lap: currentDataPoint.lap
+                } : null
+            };
+
+            const response = await fetch(`${this.baseUrl}/ai/analyze`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestData)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                console.log('✅ AI analysis successful, generating PDF...');
+
+                // Generate PDF with the AI response
+                const reportName = customReportName || this.getDefaultReportName(reportType);
+                await this.generatePDF(reportName, result.response, reportType);
+
+                // Close modal
+                document.getElementById('reports-modal').style.display = 'none';
+                this.resetReportsForm();
+
+                console.log('✅ Report generation completed successfully');
+            } else {
+                console.error('❌ AI analysis failed:', result.error);
+                alert(`Failed to generate report: ${result.error}`);
+            }
+
+        } catch (error) {
+            console.error('❌ Report generation error:', error);
+            alert(`Error generating report: ${error.message}`);
+        } finally {
+            // Reset loading state
+            generateBtn.disabled = false;
+            generateBtn.classList.remove('generating');
+        }
+    }
+
+    buildReportPrompt(reportType, currentLap) {
+        const carParts = this.selectedCar.split('-');
+        const carNumber = carParts.length >= 3 ? carParts[2] : this.selectedCar;
+
+        const baseContext = `Current situation: I am driving Car #${carNumber} in ${this.selectedRace}` +
+            (currentLap ? `, currently analyzing lap ${currentLap}` : '') +
+            `. Please provide a comprehensive analysis report with detailed markdown formatting.`;
+
+        switch (reportType) {
+            case 'compare-my-best':
+                return `${baseContext}
+
+I need a detailed comparison report between this lap and my best lap in this race. Please analyze:
+
+## Performance Analysis Requested:
+- **Lap Time Comparison**: How does this lap compare to my personal best lap time?
+- **Sector Analysis**: Detailed breakdown of sector times and where I gained or lost time
+- **Telemetry Analysis**: Speed, throttle, brake, and steering input differences
+- **Racing Line**: GPS track analysis and racing line optimization opportunities
+- **Technique Improvements**: Specific recommendations for braking points, throttle application, and cornering technique
+- **Data-Driven Insights**: Use actual telemetry values and measurements in your analysis
+
+Please format this as a comprehensive report with clear sections, specific data points, and actionable recommendations for improvement. Use markdown formatting with headers, bullet points, and emphasis for readability.`;
+
+            case 'compare-winner-best':
+                return `${baseContext}
+
+I need a detailed comparison report between this lap and the race winner's best lap. Please analyze:
+
+## Competitive Analysis Requested:
+- **Lap Time Gap**: How much time I'm losing to the race winner and where
+- **Sector Comparison**: Detailed breakdown comparing my sector times to the winner's best sectors
+- **Performance Gaps**: Specific areas where the winner is faster (braking zones, cornering speed, acceleration)
+- **Telemetry Comparison**: Speed profiles, throttle patterns, and technique differences
+- **Racing Line Analysis**: How my line compares to the optimal line taken by the winner
+- **Improvement Strategy**: Specific techniques and approaches to close the performance gap
+
+Please format this as a comprehensive competitive analysis report with clear sections, specific data comparisons, and strategic recommendations. Use markdown formatting with headers, bullet points, and emphasis for readability.`;
+
+            default:
+                return `${baseContext} Please provide a general performance analysis of this lap with recommendations for improvement.`;
+        }
+    }
+
+    getDefaultReportName(reportType) {
+        const carParts = this.selectedCar.split('-');
+        const carNumber = carParts.length >= 3 ? carParts[2] : this.selectedCar;
+        const currentLap = this.getCurrentLapNumber();
+        const raceNumber = this.selectedRace === 'R1' ? '1' : '2';
+        const trackName = this.trackData ? this.trackData.track_name.replace(/\s+/g, '_') : 'Track';
+        const timestamp = new Date().toISOString().slice(0, 16).replace('T', '_');
+
+        const reportNames = {
+            'compare-my-best': `${trackName}_Race${raceNumber}_Car${carNumber}_Lap${currentLap}_vs_MyBest_${timestamp}`,
+            'compare-winner-best': `${trackName}_Race${raceNumber}_Car${carNumber}_Lap${currentLap}_vs_Winner_${timestamp}`
+        };
+
+        return reportNames[reportType] || `${trackName}_Race${raceNumber}_Report_${timestamp}`;
+    }
+
+    async generatePDF(reportName, content, reportType) {
+        console.log('📄 Generating PDF:', reportName);
+
+        try {
+            // Check if jsPDF is available
+            if (typeof window.jspdf === 'undefined') {
+                throw new Error('jsPDF library not loaded');
+            }
+
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            // PDF configuration
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            const margin = 20;
+            const maxWidth = pageWidth - 2 * margin;
+            let currentY = margin;
+
+            // Helper function to add text with word wrapping and proper spacing
+            const addText = (text, fontSize = 10, isBold = false, isItalic = false, marginBottom = 3) => {
+                if (!text || text.trim() === '') {
+                    currentY += marginBottom;
+                    return;
+                }
+
+                doc.setFontSize(fontSize);
+                doc.setFont('helvetica', isBold ? 'bold' : (isItalic ? 'italic' : 'normal'));
+
+                // Clean the text thoroughly for jsPDF
+                const cleanedText = this.sanitizeTextForPDF(text);
+                const lines = doc.splitTextToSize(cleanedText, maxWidth);
+                const lineHeight = fontSize * 0.6;
+
+                // Check if we need a new page
+                if (currentY + (lines.length * lineHeight) + marginBottom > pageHeight - margin) {
+                    doc.addPage();
+                    currentY = margin;
+                }
+
+                doc.text(lines, margin, currentY);
+                currentY += lines.length * lineHeight + marginBottom;
+            };
+
+            // Add header
+            const carParts = this.selectedCar.split('-');
+            const carNumber = carParts.length >= 3 ? carParts[2] : this.selectedCar;
+            const currentLap = this.getCurrentLapNumber();
+
+            addText('AI Racing Coach Report', 18, true, false, 8);
+            addText(`Race: ${this.selectedRace} | Car: #${carNumber} | Lap: ${currentLap || 'Current'}`, 12, true, false, 5);
+            addText(`Generated: ${new Date().toLocaleString()}`, 10, false, true, 10);
+
+            // Process the markdown content into structured elements
+            const structuredContent = this.parseMarkdownToStructure(content);
+
+            // Render each structured element
+            for (const element of structuredContent) {
+                switch (element.type) {
+                    case 'heading1':
+                        addText(element.text, 16, true, false, 8);
+                        break;
+                    case 'heading2':
+                        addText(element.text, 14, true, false, 6);
+                        break;
+                    case 'heading3':
+                        addText(element.text, 12, true, false, 5);
+                        break;
+                    case 'paragraph':
+                        addText(element.text, 10, false, false, 6);
+                        break;
+                    case 'bullet':
+                        addText(`• ${element.text}`, 10, false, false, 3);
+                        break;
+                    case 'numbered':
+                        addText(element.text, 10, false, false, 3);
+                        break;
+                    case 'bold':
+                        addText(element.text, 10, true, false, 6);
+                        break;
+                    case 'italic':
+                        addText(element.text, 10, false, true, 6);
+                        break;
+                    case 'quote':
+                        addText(`"${element.text}"`, 10, false, true, 6);
+                        break;
+                    case 'table':
+                        this.renderTableInPDF(doc, element, margin, maxWidth, currentY);
+                        currentY = this.currentTableY;
+                        break;
+                    case 'empty':
+                        addText('', 10, false, false, 8);
+                        break;
+                    default:
+                        addText(element.text, 10, false, false, 3);
+                }
+            }
+
+            // Add footer
+            const totalPages = doc.internal.getNumberOfPages();
+            for (let i = 1; i <= totalPages; i++) {
+                doc.setPage(i);
+                doc.setFontSize(8);
+                doc.setFont('helvetica', 'normal');
+                doc.text(`Page ${i} of ${totalPages} | Generated by AI Racing Coach`,
+                    pageWidth - margin, pageHeight - 10, { align: 'right' });
+            }
+
+            // Save the PDF
+            const fileName = `${reportName}.pdf`;
+            doc.save(fileName);
+
+            console.log('✅ PDF generated and saved:', fileName);
+
+        } catch (error) {
+            console.error('❌ PDF generation failed:', error);
+            throw error;
+        }
+    }
+
+    parseMarkdownToStructure(content) {
+        const lines = content.split('\n');
+        const elements = [];
+        let i = 0;
+
+        while (i < lines.length) {
+            let line = lines[i].trim();
+
+            if (!line) {
+                elements.push({ type: 'empty', text: '' });
+                i++;
+                continue;
+            }
+
+            // Check for table (starts with | or has | in it and next line is header separator)
+            if (line.includes('|') && i + 1 < lines.length) {
+                const nextLine = lines[i + 1].trim();
+                if (nextLine.match(/^\|?[-:\s|]+\|?$/)) {
+                    // This is a table, parse it
+                    const tableResult = this.parseTableFromLines(lines, i);
+                    elements.push(tableResult.element);
+                    i = tableResult.nextIndex;
+                    continue;
+                }
+            }
+
+            // Headers (check in order of specificity)
+            if (line.startsWith('### ')) {
+                elements.push({
+                    type: 'heading3',
+                    text: this.sanitizeTextForPDF(line.substring(4))
+                });
+            } else if (line.startsWith('## ')) {
+                elements.push({
+                    type: 'heading2',
+                    text: this.sanitizeTextForPDF(line.substring(3))
+                });
+            } else if (line.startsWith('# ')) {
+                elements.push({
+                    type: 'heading1',
+                    text: this.sanitizeTextForPDF(line.substring(2))
+                });
+            }
+            // Bullet points (handle various formats)
+            else if (/^[-*+]\s/.test(line)) {
+                elements.push({
+                    type: 'bullet',
+                    text: this.sanitizeTextForPDF(line.substring(2))
+                });
+            }
+            // Numbered lists
+            else if (/^\d+\.\s/.test(line)) {
+                elements.push({
+                    type: 'numbered',
+                    text: this.sanitizeTextForPDF(line)
+                });
+            }
+            // Blockquotes
+            else if (line.startsWith('> ')) {
+                elements.push({
+                    type: 'quote',
+                    text: this.sanitizeTextForPDF(line.substring(2))
+                });
+            }
+            // Check if entire line is bold
+            else if (line.match(/^\*\*(.*)\*\*$/)) {
+                const match = line.match(/^\*\*(.*)\*\*$/);
+                elements.push({
+                    type: 'bold',
+                    text: this.sanitizeTextForPDF(match[1])
+                });
+            }
+            // Check if entire line is italic
+            else if (line.match(/^\*(.*)\*$/) || line.match(/^_(.*)_$/)) {
+                const match = line.match(/^\*(.*)\*$/) || line.match(/^_(.*)_$/);
+                if (match) {
+                    elements.push({
+                        type: 'italic',
+                        text: this.sanitizeTextForPDF(match[1])
+                    });
+                } else {
+                    elements.push({
+                        type: 'paragraph',
+                        text: this.removeInlineMarkdownAndSanitize(line)
+                    });
+                }
+            }
+            // Regular paragraph text
+            else {
+                elements.push({
+                    type: 'paragraph',
+                    text: this.removeInlineMarkdownAndSanitize(line)
+                });
+            }
+
+            i++;
+        }
+
+        return elements;
+    }
+
+    parseTableFromLines(lines, startIndex) {
+        let i = startIndex;
+        const headerLine = lines[i].trim();
+        const separatorLine = lines[i + 1].trim();
+
+        // Parse header
+        const headers = headerLine.split('|').map(h => this.sanitizeTextForPDF(h.trim())).filter(h => h);
+
+        // Skip separator line
+        i += 2;
+
+        // Parse data rows
+        const rows = [];
+        while (i < lines.length) {
+            const line = lines[i].trim();
+            if (!line || !line.includes('|')) {
+                break;
+            }
+
+            const cells = line.split('|').map(c => this.sanitizeTextForPDF(c.trim())).filter(c => c !== '');
+            if (cells.length > 0) {
+                rows.push(cells);
+            }
+            i++;
+        }
+
+        return {
+            element: {
+                type: 'table',
+                headers: headers,
+                rows: rows
+            },
+            nextIndex: i
+        };
+    }
+
+    removeInlineMarkdownAndSanitize(text) {
+        let cleaned = text;
+
+        // Remove inline code first
+        cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
+
+        // Remove links but keep text
+        cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+        // Remove images but keep alt text
+        cleaned = cleaned.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
+
+        // Remove bold formatting but keep text
+        cleaned = cleaned.replace(/\*\*([^*]+)\*\*/g, '$1');
+        cleaned = cleaned.replace(/__([^_]+)__/g, '$1');
+
+        // Remove italic formatting but keep text
+        cleaned = cleaned.replace(/\*([^*]+)\*/g, '$1');
+        cleaned = cleaned.replace(/_([^_]+)_/g, '$1');
+
+        // Remove strikethrough
+        cleaned = cleaned.replace(/~~([^~]+)~~/g, '$1');
+
+        return this.sanitizeTextForPDF(cleaned);
+    }
+
+    renderTableInPDF(doc, tableElement, margin, maxWidth, startY) {
+        const pageHeight = doc.internal.pageSize.getHeight();
+        let currentY = startY;
+
+        const headers = tableElement.headers;
+        const rows = tableElement.rows;
+
+        if (!headers || headers.length === 0) {
+            this.currentTableY = currentY + 10;
+            return;
+        }
+
+        // Calculate column widths - distribute evenly
+        const colWidth = maxWidth / headers.length;
+        const rowHeight = 12;
+        const fontSize = 9;
+
+        // Check if table fits on current page
+        const tableHeight = (rows.length + 1) * rowHeight + 10; // +1 for header, +10 for spacing
+        if (currentY + tableHeight > pageHeight - margin) {
+            doc.addPage();
+            currentY = margin;
+        }
+
+        doc.setFontSize(fontSize);
+
+        // Draw header row
+        doc.setFont('helvetica', 'bold');
+        for (let col = 0; col < headers.length; col++) {
+            const x = margin + (col * colWidth);
+            const headerText = headers[col] || '';
+
+            // Add border for header
+            doc.rect(x, currentY, colWidth, rowHeight);
+
+            // Add header text (truncate if too long)
+            const lines = doc.splitTextToSize(headerText, colWidth - 4);
+            doc.text(lines[0] || '', x + 2, currentY + 8);
+        }
+        currentY += rowHeight;
+
+        // Draw data rows
+        doc.setFont('helvetica', 'normal');
+        for (let row = 0; row < rows.length; row++) {
+            const rowData = rows[row];
+
+            // Check if we need a new page
+            if (currentY + rowHeight > pageHeight - margin) {
+                doc.addPage();
+                currentY = margin;
+            }
+
+            for (let col = 0; col < headers.length; col++) {
+                const x = margin + (col * colWidth);
+                const cellText = (col < rowData.length) ? rowData[col] : '';
+
+                // Add border for cell
+                doc.rect(x, currentY, colWidth, rowHeight);
+
+                // Add cell text (truncate if too long)
+                const lines = doc.splitTextToSize(cellText, colWidth - 4);
+                doc.text(lines[0] || '', x + 2, currentY + 8);
+            }
+            currentY += rowHeight;
+        }
+
+        // Add spacing after table
+        this.currentTableY = currentY + 10;
+    }
+
+    sanitizeTextForPDF(text) {
+        if (!text) return '';
+
+        // Convert text to basic ASCII-compatible characters for jsPDF
+        return text
+            // Handle emojis and special symbols - remove them completely
+            .replace(/[\u{1F600}-\u{1F64F}]/gu, '') // Emoticons
+            .replace(/[\u{1F300}-\u{1F5FF}]/gu, '') // Misc Symbols and Pictographs
+            .replace(/[\u{1F680}-\u{1F6FF}]/gu, '') // Transport and Map Symbols
+            .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '') // Flags
+            .replace(/[\u{2600}-\u{26FF}]/gu, '')   // Misc symbols
+            .replace(/[\u{2700}-\u{27BF}]/gu, '')   // Dingbats
+
+            // Smart quotes to regular quotes
+            .replace(/[""]/g, '"')
+            .replace(/['']/g, "'")
+            .replace(/[`´]/g, "'")
+
+            // Dashes to hyphens
+            .replace(/[–—]/g, '-')
+            .replace(/[…]/g, '...')
+
+            // Special characters to text equivalents
+            .replace(/[\u00A9]/g, '(c)')  // Copyright
+            .replace(/[\u00AE]/g, '(r)')  // Registered
+            .replace(/[\u2122]/g, 'TM')   // Trademark
+            .replace(/[\u00B0]/g, ' degrees') // Degree symbol
+
+            // Mathematical symbols
+            .replace(/[\u00B1]/g, '+/-')
+            .replace(/[\u00D7]/g, 'x')
+            .replace(/[\u00F7]/g, '/')
+            .replace(/[\u00BC]/g, '1/4')
+            .replace(/[\u00BD]/g, '1/2')
+            .replace(/[\u00BE]/g, '3/4')
+
+            // Normalize whitespace
+            .replace(/[\u00A0\u2000-\u200F\u202F]/g, ' ') // Non-breaking and weird spaces
+            .replace(/[\u2028\u2029]/g, ' ')              // Line/paragraph separators
+            .replace(/[\uFEFF\u200B-\u200D]/g, '')       // Zero-width characters
+
+            // Remove any remaining high Unicode that jsPDF can't handle
+            .replace(/[\u0100-\uFFFF]/g, '')
+
+            // Clean up whitespace
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 }
 

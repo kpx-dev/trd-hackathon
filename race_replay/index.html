@@ -625,6 +625,27 @@
             background-color: #218838;
         }
 
+        .ai-reports-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: bold;
+            transition: background-color 0.2s ease;
+        }
+
+        .ai-reports-btn:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+
+        .ai-reports-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
         /* Expanded AI Coach Styles */
         .ai-expanded {
             position: fixed;
@@ -677,6 +698,225 @@
         /* Hide other content when AI is expanded */
         .content-hidden {
             display: none;
+        }
+
+        /* Reports Modal Styles */
+        .reports-modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(3px);
+        }
+
+        .reports-modal-content {
+            position: relative;
+            background-color: white;
+            margin: 5% auto;
+            width: 90%;
+            max-width: 500px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            animation: modalSlideIn 0.3s ease-out;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .reports-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 25px;
+            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+            color: white;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .reports-modal-header h3 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .reports-close-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s ease;
+        }
+
+        .reports-close-btn:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .reports-modal-body {
+            padding: 25px;
+        }
+
+        .reports-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .reports-form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .reports-form-group label {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .reports-select,
+        .reports-input {
+            padding: 12px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            background-color: white;
+        }
+
+        .reports-select:focus,
+        .reports-input:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+        }
+
+        .reports-context-info {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .reports-context-title {
+            font-weight: 600;
+            color: #495057;
+            font-size: 13px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .reports-context-details {
+            color: #6c757d;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .reports-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 10px;
+        }
+
+        .reports-generate-btn {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            min-width: 140px;
+        }
+
+        .reports-generate-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, #218838 0%, #1e7e34 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+        }
+
+        .reports-generate-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .reports-generate-btn.generating {
+            background: #ffc107;
+            color: #212529;
+            pointer-events: none;
+        }
+
+        .reports-btn-loading {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .reports-btn-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(33, 37, 41, 0.3);
+            border-radius: 50%;
+            border-top: 2px solid #212529;
+            animation: reportSpinnerRotate 1s linear infinite;
+        }
+
+        @keyframes reportSpinnerRotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .reports-generate-btn.generating .reports-btn-text {
+            display: none;
+        }
+
+        .reports-generate-btn.generating .reports-btn-loading {
+            display: inline-flex;
+        }
+
+        .reports-cancel-btn {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .reports-cancel-btn:hover {
+            background-color: #5a6268;
+            transform: translateY(-1px);
         }
 
         .telemetry-value {
@@ -1028,6 +1268,7 @@
                             <span id="ai-connection-status" class="ai-connection-status connecting" title="Connecting to AI agent...">🔄</span>
                         </div>
                         <div class="ai-header-buttons">
+                            <button id="ai-reports-btn" class="ai-reports-btn" title="Generate performance reports">📊 Reports</button>
                             <button id="ai-copy-btn" class="ai-copy-btn" title="Copy conversation text">📋 Copy</button>
                             <button id="ai-expand-btn" class="ai-expand-btn" title="Expand AI coach to full screen">⛶ Expand</button>
                             <button id="ai-reset-btn" class="ai-reset-btn" title="Reset conversation and clear agent memory">🔄 Reset</button>
@@ -1155,6 +1396,53 @@ I can analyze your **telemetry data** and provide specific advice to improve you
 
     </div>
 
+    <!-- Reports Modal -->
+    <div id="reports-modal" class="reports-modal">
+        <div class="reports-modal-content">
+            <div class="reports-modal-header">
+                <h3>📊 Generate Performance Report</h3>
+                <button id="close-reports-modal" class="reports-close-btn" title="Close">&times;</button>
+            </div>
+
+            <div class="reports-modal-body">
+                <div class="reports-form">
+                    <div class="reports-form-group">
+                        <label for="report-type-select">Report Type:</label>
+                        <select id="report-type-select" class="reports-select">
+                            <option value="">Select a report type...</option>
+                            <option value="compare-my-best">Compare this lap to my best lap</option>
+                            <option value="compare-winner-best">Compare this lap to the winner's best lap</option>
+                        </select>
+                    </div>
+
+                    <div class="reports-form-group">
+                        <label for="report-name-input">Report Name:</label>
+                        <input type="text" id="report-name-input" class="reports-input" placeholder="Enter custom report name (optional)">
+                    </div>
+
+                    <div class="reports-context-info">
+                        <div class="reports-context-title">Current Context:</div>
+                        <div id="reports-context-details" class="reports-context-details">
+                            Please select a car and lap to generate reports
+                        </div>
+                    </div>
+
+                    <div class="reports-actions">
+                        <button id="generate-report-btn" class="reports-generate-btn" disabled>
+                            <span class="reports-btn-text">Generate Report</span>
+                            <span class="reports-btn-loading">
+                                <span class="reports-btn-spinner"></span>
+                                Generating...
+                            </span>
+                        </button>
+                        <button id="cancel-report-btn" class="reports-cancel-btn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="track-map.js?v=1731603415"></script>
 
 </body>
