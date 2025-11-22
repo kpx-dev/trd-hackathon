@@ -14,6 +14,7 @@ This is an interactive web-based racing replay application that visualizes Toyot
 
 - **Interactive Race Replay**: Real-time visualization of car movement on track with full telemetry data
 - **AI Racing Coach**: Powered by Strands Agents SDK with access to comprehensive racing data
+- **PDF Report Generation**: Professional performance analysis reports with optimized formatting
 - **Live Telemetry Display**: Real-time speed, RPM, throttle, brake, steering, and G-force data
 - **Lap Analysis**: Detailed lap timing, sector analysis, and performance comparisons
 - **GPS Trace Visualization**: Precise car positioning with racing line overlay
@@ -99,6 +100,7 @@ trd-hackathon/
 - **Video-style controls** (play, pause, step forward/backward)
 - **Lap jumping** with dropdown navigation
 - **AI chat interface** for performance coaching questions
+- **PDF report generation** with jsPDF for downloadable analysis
 - **Responsive design** for desktop and mobile
 
 ## 📊 Racing Analytics Features
@@ -120,6 +122,12 @@ trd-hackathon/
 - Technique analysis using high-resolution telemetry data
 - Comparative performance insights vs. field leaders
 - Strategic recommendations for improvement
+- **Professional PDF reports** with comprehensive lap analysis
+  - Optimized formatting with minimal whitespace
+  - Color-coded performance indicators (green for achievements, red for critical findings)
+  - Detailed sector-by-sector breakdowns
+  - Comparative analysis tables and data visualization
+  - Downloadable for offline review and sharing
 
 ## 🛠️ API Endpoints
 
@@ -156,6 +164,9 @@ Ask the AI racing coach questions like:
 - "Why was I slower in sector 2?"
 - "Compare my braking points to the fastest lap"
 - "How can I improve my cornering technique?"
+- "Generate a comprehensive performance report for this lap"
+
+**Generate PDF Reports**: Click the "Generate Report" button in the AI Racing Coach panel to create a professional, downloadable PDF analysis of your current lap performance.
 
 ### Performance Analysis
 - Jump to specific laps using the lap dropdown
@@ -172,6 +183,7 @@ All dependencies are managed through `pyproject.toml`:
 - **Boto3** for AWS integration
 - **Strands Agents** for AI coaching
 - **D3.js** (CDN) for frontend visualization
+- **jsPDF** (CDN) for PDF report generation
 
 ### Data Management
 Large telemetry CSV files are managed using Git LFS:
