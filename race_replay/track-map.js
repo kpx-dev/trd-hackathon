@@ -2518,10 +2518,10 @@ Please format this as a comprehensive competitive analysis report with clear sec
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
 
-            // PDF configuration with professional styling
+            // PDF configuration with professional styling - optimized for better space utilization
             const pageWidth = doc.internal.pageSize.getWidth();
             const pageHeight = doc.internal.pageSize.getHeight();
-            const margin = 20;
+            const margin = 10; // Reduced to 10 to maximize usable width
             const maxWidth = pageWidth - 2 * margin;
             let currentY = margin;
 
@@ -2543,7 +2543,7 @@ Please format this as a comprehensive competitive analysis report with clear sec
                     isBold: false,
                     isItalic: false,
                     color: colors.dark,
-                    marginBottom: 1,  // Reduced from 2 to 1
+                    marginBottom: 2,  // Fixed: increased from 0.5 to 2 for better readability
                     alignment: 'left',
                     indent: 0,
                     background: null,
@@ -2566,54 +2566,45 @@ Please format this as a comprehensive competitive analysis report with clear sec
                 const cleanedText = this.sanitizeTextForPDF(text);
                 const availableWidth = maxWidth - opts.indent;
 
-                // Ensure text wrapping works properly - splitTextToSize should handle this
-                // but we verify the width is reasonable
-                const lines = doc.splitTextToSize(cleanedText, availableWidth);
-                const lineHeight = opts.fontSize * 0.85;  // Use 0.85 to match jsPDF lineHeightFactor
+                // Debug: log width values to understand the issue
+                console.log(`PDF Debug - PageWidth: ${pageWidth}, Margin: ${margin}, MaxWidth: ${maxWidth}, AvailableWidth: ${availableWidth}, FontSize: ${opts.fontSize}, Indent: ${opts.indent}`);
 
-                // Extra safety check: if a line is still too long, force split it
-                // This shouldn't happen but protects against edge cases
-                const maxLineChars = Math.floor(availableWidth / (opts.fontSize * 0.5));
-                const wrappedLines = [];
-                for (let line of lines) {
-                    if (line.length > maxLineChars * 1.2) {
-                        // Line might be too long, manually split it
-                        const words = line.split(' ');
-                        let currentLine = '';
-                        for (let word of words) {
-                            const testLine = currentLine ? currentLine + ' ' + word : word;
-                            if (testLine.length > maxLineChars) {
-                                if (currentLine) wrappedLines.push(currentLine);
-                                currentLine = word;
-                            } else {
-                                currentLine = testLine;
-                            }
-                        }
-                        if (currentLine) wrappedLines.push(currentLine);
-                    } else {
-                        wrappedLines.push(line);
-                    }
-                }
-                const finalLines = wrappedLines.length > 0 ? wrappedLines : lines;
+                // Force wider text width - try using 85% of page width to maximize usage
+                const forceWideWidth = pageWidth * 0.85;
+                const textWidth = Math.max(availableWidth, forceWideWidth);
+                console.log(`PDF Debug - Using textWidth: ${textWidth} (original: ${availableWidth}, forced: ${forceWideWidth})`);
 
-                // Check if we need a new page
-                if (currentY + (finalLines.length * lineHeight) + opts.marginBottom > pageHeight - margin) {
+                // Ensure text wrapping works properly - use most of available width
+                const lines = doc.splitTextToSize(cleanedText, textWidth);
+                const lineHeight = opts.fontSize * 1.4;  // Increased to 1.4 to ensure no overlapping
+
+                // Use jsPDF's built-in text wrapping which is more accurate
+                // Just trust splitTextToSize to handle width properly
+                const finalLines = lines;
+
+                // Calculate padding for backgrounds - balanced for readability
+                const topPadding = 2;
+                const bottomPadding = 2;
+                const sidePadding = 2;
+
+                // Calculate total height needed including padding and margins
+                const backgroundPadding = opts.background ? (topPadding + bottomPadding) : 0;
+                const totalHeightNeeded = (finalLines.length * lineHeight) + backgroundPadding + opts.marginBottom;
+
+                // Check if we need a new page - add extra buffer to prevent cutoffs
+                const bottomMarginBuffer = 25; // Extra buffer to prevent cutoffs
+                if (currentY + totalHeightNeeded > pageHeight - margin - bottomMarginBuffer) {
                     doc.addPage();
                     currentY = margin;
                     // Add AI robot icon to new pages (REMOVED per user request)
                     // this.addAIRobotIcon(doc, margin, currentY - 15);
                 }
 
-                // Calculate padding for backgrounds
-                const topPadding = 3;
-                const bottomPadding = 3;
-                const sidePadding = 3;
-
                 // Add background if specified
                 if (opts.background) {
                     doc.setFillColor(opts.background[0], opts.background[1], opts.background[2]);
                     const boxHeight = finalLines.length * lineHeight + topPadding + bottomPadding;
-                    doc.rect(margin + opts.indent, currentY, availableWidth, boxHeight, 'F');
+                    doc.rect(margin + opts.indent, currentY, textWidth, boxHeight, 'F');
                 }
 
                 // Add border if specified
@@ -2621,7 +2612,7 @@ Please format this as a comprehensive competitive analysis report with clear sec
                     doc.setDrawColor(colors.secondary[0], colors.secondary[1], colors.secondary[2]);
                     doc.setLineWidth(0.5);
                     const boxHeight = finalLines.length * lineHeight + topPadding + bottomPadding;
-                    doc.rect(margin + opts.indent, currentY, availableWidth, boxHeight);
+                    doc.rect(margin + opts.indent, currentY, textWidth, boxHeight);
                 }
 
                 // Add text with proper alignment and padding when background is present
@@ -2632,7 +2623,7 @@ Please format this as a comprehensive competitive analysis report with clear sec
                            margin + opts.indent + (opts.background ? sidePadding : 0);
 
                 const textOptions = {
-                    lineHeightFactor: 0.85  // Tighter line spacing for multi-line text
+                    lineHeightFactor: 1.4  // Fixed: increased to 1.4 to prevent overlapping
                 };
                 if (opts.alignment === 'center') textOptions.align = 'center';
                 if (opts.alignment === 'right') textOptions.align = 'right';
@@ -2664,7 +2655,7 @@ Please format this as a comprehensive competitive analysis report with clear sec
                 fontSize: 16,
                 isBold: true,
                 color: colors.primary,
-                marginBottom: 2,  // Reduced from 4 to 2
+                marginBottom: 1,  // Reduced from 2 to 1
                 alignment: 'center'
             });
 
@@ -2673,7 +2664,7 @@ Please format this as a comprehensive competitive analysis report with clear sec
                 fontSize: 14,
                 isBold: true,
                 color: colors.secondary,
-                marginBottom: 2,  // Reduced from 3 to 2
+                marginBottom: 1,  // Reduced from 2 to 1
                 alignment: 'center'
             });
 
@@ -2682,13 +2673,13 @@ Please format this as a comprehensive competitive analysis report with clear sec
                 fontSize: 10,
                 isItalic: true,
                 color: colors.secondary,
-                marginBottom: 4,  // Reduced from 8 to 4
+                marginBottom: 6,  // Increased to provide proper spacing above separator
                 alignment: 'center'
             });
 
             // Add horizontal separator
-            this.addHorizontalSeparator(doc, margin, currentY - 5, maxWidth, colors.secondary);
-            currentY += 3;  // Reduced from 5 to 3
+            this.addHorizontalSeparator(doc, margin, currentY - 3, maxWidth, colors.secondary);
+            currentY += 4;  // Increased to provide proper spacing below separator
 
             // Process and render markdown content with enhanced formatting
             const structuredContent = this.parseMarkdownToStructureEnhanced(content);
@@ -2748,6 +2739,14 @@ Please format this as a comprehensive competitive analysis report with clear sec
                             isBold: true,
                             color: colors.dark,
                             marginBottom: 2  // Reduced from 3 to 2
+                        });
+                        break;
+                    case 'bold':
+                        addText(element.text, {
+                            fontSize: 10,
+                            isBold: true,
+                            color: colors.dark,
+                            marginBottom: 2
                         });
                         break;
                     case 'italic_paragraph':
@@ -3029,7 +3028,10 @@ Please format this as a comprehensive competitive analysis report with clear sec
     processInlineFormattingForPDF(text) {
         // For now, simply remove markdown and sanitize since jsPDF doesn't support rich text easily
         // In a more advanced implementation, you could split the text and apply different formatting
-        return this.removeInlineMarkdownAndSanitize(text);
+        console.log(`PDF Debug - Processing inline formatting: "${text}"`);
+        const result = this.removeInlineMarkdownAndSanitize(text);
+        console.log(`PDF Debug - After markdown removal: "${result}"`);
+        return result;
     }
 
     renderTableInPDFEnhanced(doc, tableElement, margin, maxWidth, startY, colors) {
@@ -3051,7 +3053,8 @@ Please format this as a comprehensive competitive analysis report with clear sec
 
         // Check if table fits on current page
         const tableHeight = (rows.length + 1) * rowHeight + 15;
-        if (currentY + tableHeight > pageHeight - margin) {
+        const bottomMarginBuffer = 25; // Extra buffer to prevent cutoffs
+        if (currentY + tableHeight > pageHeight - margin - bottomMarginBuffer) {
             doc.addPage();
             currentY = margin;
             // this.addAIRobotIcon(doc, margin, currentY - 15);
@@ -3089,7 +3092,8 @@ Please format this as a comprehensive competitive analysis report with clear sec
             const rowData = rows[row];
 
             // Check if we need a new page
-            if (currentY + rowHeight > pageHeight - margin) {
+            const bottomMarginBuffer = 25; // Extra buffer to prevent cutoffs
+            if (currentY + rowHeight > pageHeight - margin - bottomMarginBuffer) {
                 doc.addPage();
                 currentY = margin;
                 // this.addAIRobotIcon(doc, margin, currentY - 15);
@@ -3262,6 +3266,8 @@ Please format this as a comprehensive competitive analysis report with clear sec
     removeInlineMarkdownAndSanitize(text) {
         let cleaned = text;
 
+        console.log(`PDF Debug - removeInlineMarkdown input: "${text}"`);
+
         // Remove inline code first
         cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
 
@@ -3271,8 +3277,9 @@ Please format this as a comprehensive competitive analysis report with clear sec
         // Remove images but keep alt text
         cleaned = cleaned.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
 
-        // Remove bold formatting but keep text
-        cleaned = cleaned.replace(/\*\*([^*]+)\*\*/g, '$1');
+        // Remove bold formatting but keep text - improved regex
+        cleaned = cleaned.replace(/\*\*([^*]+?)\*\*/g, '$1');
+        cleaned = cleaned.replace(/\*\*([^\*]*?)\*\*/g, '$1');  // More aggressive
         cleaned = cleaned.replace(/__([^_]+)__/g, '$1');
 
         // Remove italic formatting but keep text
@@ -3281,6 +3288,11 @@ Please format this as a comprehensive competitive analysis report with clear sec
 
         // Remove strikethrough
         cleaned = cleaned.replace(/~~([^~]+)~~/g, '$1');
+
+        // Extra aggressive markdown removal as fallback
+        cleaned = cleaned.replace(/\*\*/g, ''); // Remove any remaining **
+
+        console.log(`PDF Debug - removeInlineMarkdown output: "${cleaned}"`);
 
         return this.sanitizeTextForPDF(cleaned);
     }
@@ -3304,7 +3316,8 @@ Please format this as a comprehensive competitive analysis report with clear sec
 
         // Check if table fits on current page
         const tableHeight = (rows.length + 1) * rowHeight + 10; // +1 for header, +10 for spacing
-        if (currentY + tableHeight > pageHeight - margin) {
+        const bottomMarginBuffer = 25; // Extra buffer to prevent cutoffs
+        if (currentY + tableHeight > pageHeight - margin - bottomMarginBuffer) {
             doc.addPage();
             currentY = margin;
         }
@@ -3332,7 +3345,8 @@ Please format this as a comprehensive competitive analysis report with clear sec
             const rowData = rows[row];
 
             // Check if we need a new page
-            if (currentY + rowHeight > pageHeight - margin) {
+            const bottomMarginBuffer = 25; // Extra buffer to prevent cutoffs
+            if (currentY + rowHeight > pageHeight - margin - bottomMarginBuffer) {
                 doc.addPage();
                 currentY = margin;
             }
