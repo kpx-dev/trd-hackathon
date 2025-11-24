@@ -22,6 +22,8 @@ This is an interactive web-based racing replay application that visualizes Toyot
 
 ## 🗺️ Available Data
 
+Datasets are available here: [https://trddev.com/hackathon-2025/](https://trddev.com/hackathon-2025/)
+
 The application includes comprehensive Toyota GR Cup racing data from Barber Motorsports Park:
 
 - **Race Data**: R1 (Race 1) and R2 (Race 2) complete datasets
