@@ -10,6 +10,13 @@
 
 This is an interactive web-based racing replay application that visualizes Toyota GR Cup telemetry data with an integrated AI racing coach. The system provides comprehensive race analysis, telemetry visualization, and AI-powered coaching insights for racing performance improvement.
 
+
+### 🚀 Live Demo
+
+For a live demo, login at: [http://52.6.147.127](http://52.6.147.127)
+username: demo
+password: TRDHackathon2025Demo@!!
+
 ### 🚀 Core Features
 
 - **Interactive Race Replay**: Real-time visualization of car movement on track with full telemetry data
