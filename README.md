@@ -14,7 +14,9 @@ This is an interactive web-based racing replay application that visualizes Toyot
 ### 🚀 Live Demo
 
 For a live demo, login at: [http://52.6.147.127](http://52.6.147.127)
+
 username: demo
+
 password: TRDHackathon2025Demo@!!
 
 ### 🚀 Core Features
